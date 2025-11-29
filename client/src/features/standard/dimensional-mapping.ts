@@ -80,10 +80,11 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
       w,
       h,
       qty: 1,
-      rotate: !woodGrainsEnabled,  // Prevent rotation if wood grains enabled
+      rotate: true,
       gaddi: p.gaddi === true,
       laminateCode,
       grainFlag: false,
+      grainDirection: woodGrainsEnabled ? 'LOCKED' : null,  // Set grainDirection to lock rotation in optimizer
       woodGrainsEnabled: woodGrainsEnabled,  // Store for reference
       originalPanel: p
     };

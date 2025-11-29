@@ -40,6 +40,7 @@ export interface OptimizerPart {
   gaddi: boolean;    // GADDI marking flag
   laminateCode: string;
   grainFlag?: boolean;        // Master wood grains toggle state
+  grainDirection?: string | boolean | null;  // Wood grain direction ('LOCKED' prevents rotation)
   woodGrainsEnabled?: boolean; // Per-laminate wood grain setting
   originalPanel: Panel;       // Reference to original panel
 }
