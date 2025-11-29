@@ -147,12 +147,13 @@ const saveShutterFormMemory = (values: ShutterFormMemory) => {
 };
 
 /**
- * SIMPLE: Prepare panels for optimizer
+ * SIMPLE: Prepare panels for optimizer with wood grain constraint
  * @param panels - Array of panels with name, width, height, laminateCode
+ * @param preferences - Wood grain preferences map
  * @returns Array of parts ready for optimizer
  */
-function preparePartsForOptimizer(panels: Array<any>) {
-  return prepareStandardParts(panels);
+function preparePartsForOptimizer(panels: Array<any>, preferences: Record<string, boolean> = {}) {
+  return prepareStandardParts(panels, preferences);
 }
 
 /**
@@ -2301,12 +2302,12 @@ export default function Home() {
       console.log('Group panels:', group.panels.length);
       console.groupEnd();
       
-      const rawParts = preparePartsForOptimizer(group.panels);
+      const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
       
       // Remove falsy entries and ensure id is a string (prevents optimizer crashes)
       const parts = rawParts
-        .filter(p => Boolean(p))                       // remove undefined/null
-        .map((p, i) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
+        .filter((p: any) => Boolean(p))                       // remove undefined/null
+        .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
       
       console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
       
@@ -3671,12 +3672,12 @@ export default function Home() {
         console.log('Group panels:', group.panels.length);
         console.groupEnd();
         
-        const rawParts = preparePartsForOptimizer(group.panels);
+        const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
         
         // Remove falsy entries and ensure id is a string (prevents optimizer crashes)
         const parts = rawParts
-          .filter(p => Boolean(p))                       // remove undefined/null
-          .map((p, i) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
+          .filter((p: any) => Boolean(p))                       // remove undefined/null
+          .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
         
         console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
         

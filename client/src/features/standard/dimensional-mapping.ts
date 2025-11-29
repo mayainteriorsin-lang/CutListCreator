@@ -37,14 +37,14 @@ function sortParts(parts: OptimizerPart[]): void {
 }
 
 /**
- * Prepare parts with STANDARD (non-wood grain) dimensional mapping
- * NO wood grain logic - panels use their nominal dimensions as-is
- * All rotation is allowed for optimal packing
+ * Prepare parts with STANDARD dimensional mapping
+ * When laminate has wood grains enabled, prevent rotation
  * 
  * @param panels - Array of panels from UI
+ * @param woodGrainsPreferences - Map of laminate codes with wood grain status
  * @returns Array of parts ready for standard optimization
  */
-export function prepareStandardParts(panels: Panel[]): OptimizerPart[] {
+export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Record<string, boolean> = {}): OptimizerPart[] {
   const parts: OptimizerPart[] = [];
   
   panels.forEach((p, idx) => {
@@ -53,6 +53,10 @@ export function prepareStandardParts(panels: Panel[]): OptimizerPart[] {
     const nomW = Number(p.nomW ?? p.width ?? p.w ?? 0);
     const nomH = Number(p.nomH ?? p.height ?? p.h ?? 0);
     const laminateCode = String(p.laminateCode ?? '').trim();
+    const frontCode = laminateCode.split('+')[0].trim();
+    
+    // Check if wood grains are enabled for this laminate
+    const woodGrainsEnabled = woodGrainsPreferences[frontCode] === true;
     
     // STANDARD MODE: Use nominal dimensions as-is (no wood grain swapping)
     const w = nomW;
@@ -63,8 +67,8 @@ export function prepareStandardParts(panels: Panel[]): OptimizerPart[] {
     p.displayH = h;
     p.nomW = nomW;
     p.nomH = nomH;
-    p.grainFlag = false; // Always false for standard mode
-    p.woodGrainsEnabled = false; // No wood grains in standard mode
+    p.grainFlag = false;
+    p.woodGrainsEnabled = woodGrainsEnabled;
     
     // Create optimizer part
     const safeId = String(p.id ?? name ?? `part-${idx}`);
@@ -76,11 +80,11 @@ export function prepareStandardParts(panels: Panel[]): OptimizerPart[] {
       w,
       h,
       qty: 1,
-      rotate: true,  // All panels can rotate in standard mode
+      rotate: !woodGrainsEnabled,  // Prevent rotation if wood grains enabled
       gaddi: p.gaddi === true,
       laminateCode,
-      grainFlag: false,  // Always false for standard mode
-      woodGrainsEnabled: false,  // No wood grains in standard mode
+      grainFlag: false,
+      woodGrainsEnabled: woodGrainsEnabled,  // Store for reference
       originalPanel: p
     };
     
