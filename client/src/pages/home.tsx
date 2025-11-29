@@ -37,6 +37,7 @@ import { optimizeStandardCutlist } from '@/features/standard/optimizer';
 import { getDisplayDimensions } from '@/features/cutlist/core/efficiency';
 import { validateGaddiRule } from '@/features/gaddi';
 import { onToggleWoodGrain, applyWoodGrainToParts, loadAllPrefs } from '@/features/wood-grain/memory';
+import { optimizeCutlist } from '@/lib/cutlist-optimizer';
 
 // Cabinet form memory helpers
 const CABINET_FORM_MEMORY_KEY = 'cabinetFormMemory_v1';
