@@ -3,7 +3,7 @@
  * Neutral wrapper that both wood grain and standard modules use
  */
 
-import { optimizeCutlist } from '@/lib/cutlist-optimizer';
+import { optimizeCutlist } from '../../lib/cutlist-optimizer';
 import type { OptimizerPart, OptimizationResult } from './types';
 
 /**
