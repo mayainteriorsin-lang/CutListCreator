@@ -1946,6 +1946,17 @@ export default function Home() {
       cabinet.rightPanelInnerLaminateCode || ''
     );
     
+    // ✅ FIX: Apply grain-based nomW/nomH swapping for LEFT/RIGHT panels (like shutters)
+    // When grain is ON: nomW = depth (X-axis), nomH = height (Y-axis) - NO rotation
+    // When grain is OFF: nomW = height, nomH = depth - allows rotation
+    const hasLeftGrain = cabinet.leftPanelGrainDirection === true;
+    const leftNomW = hasLeftGrain ? dimensions.left.width : dimensions.left.height;
+    const leftNomH = hasLeftGrain ? dimensions.left.height : dimensions.left.width;
+    
+    const hasRightGrain = cabinet.rightPanelGrainDirection === true;
+    const rightNomW = hasRightGrain ? dimensions.right.width : dimensions.right.height;
+    const rightNomH = hasRightGrain ? dimensions.right.height : dimensions.right.width;
+    
     const panels: Panel[] = [
       { 
         id: `${cabinet.name}-TOP-grain-${cabinet.topPanelGrainDirection === true}`,
@@ -1980,8 +1991,8 @@ export default function Home() {
         gaddi: cabinet.leftPanelGaddi === true,
         grainDirection: cabinet.leftPanelGrainDirection === true,
         plywoodType: plywoodType,
-        nomW: dimensions.left.width,
-        nomH: dimensions.left.height
+        nomW: leftNomW,
+        nomH: leftNomH
       },
       { 
         id: `${cabinet.name}-RIGHT-grain-${cabinet.rightPanelGrainDirection === true}`,
@@ -1992,8 +2003,8 @@ export default function Home() {
         gaddi: cabinet.rightPanelGaddi === true,
         grainDirection: cabinet.rightPanelGrainDirection === true,
         plywoodType: plywoodType,
-        nomW: dimensions.right.width,
-        nomH: dimensions.right.height
+        nomW: rightNomW,
+        nomH: rightNomH
       }
     ];
 
