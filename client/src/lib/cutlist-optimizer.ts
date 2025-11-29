@@ -18,6 +18,7 @@ interface Rect {
 
 interface PlacedPiece {
   id: string;
+  origId?: string;
   x: number;
   y: number;
   w: number;
@@ -25,7 +26,7 @@ interface PlacedPiece {
   rotated: boolean;
   rotateAllowed: boolean;
   gaddi?: boolean;
-  grainDirection?: boolean; // Wood grain direction flag
+  grainDirection?: string | boolean | null; // preserve original grain value ('LEFT'|'RIGHT'|null) or boolean for older data
   laminateCode?: string;    // Laminate code for grain indicator logic
   nomW?: number;   // nominal width (original panel size)
   nomH?: number;   // nominal height (original panel size)
@@ -38,7 +39,7 @@ interface Part {
   qty: number;
   rotate: boolean;
   gaddi?: boolean;
-  grainDirection?: boolean; // Wood grain direction flag (prevents rotation)
+  grainDirection?: string | boolean | null; // preserve direction string or null
   laminateCode?: string;    // Laminate code for grain indicator logic
 }
 
@@ -124,14 +125,15 @@ class MaxRectsBin {
 
     const placed: PlacedPiece = {
       id: piece.id,
+      origId: piece.origId ?? piece.id,
       x: best.rect.x + this.kerf / 2,
       y: best.rect.y + this.kerf / 2,
       w: best.rect.w - this.kerf,
       h: best.rect.h - this.kerf,
       rotated: !!best.rot,
-      rotateAllowed: piece.rotate,
+      rotateAllowed: !!piece.rotate,
       gaddi: !!piece.gaddi,         // carry the gaddi flag
-      grainDirection: !!piece.grainDirection, // carry the grain direction flag
+      grainDirection: piece.grainDirection ?? null, // preserve exact grain value (e.g. 'LEFT' | 'RIGHT' | null)
       laminateCode: piece.laminateCode || '', // carry the laminate code
       nomW: (piece as any).nomW || piece.w,   // nominal width
       nomH: (piece as any).nomH || piece.h    // nominal height
@@ -147,7 +149,7 @@ class MaxRectsBin {
     const base = this.free[index]; 
     this.free.splice(index, 1);
     const add: Rect[] = [];
-    
+
     if (used.x > base.x + EPS) {
       add.push({ x: base.x, y: base.y, w: used.x - base.x, h: base.h });
     }
@@ -305,7 +307,8 @@ function packOnce(pieces: any[], W: number, H: number, kerf: number, strategy: s
         // keep any other fields used later (rotate, laminate, original, etc)
         rotate: !!safe.rotate,
         gaddi: !!safe.gaddi,
-        grainDirection: !!safe.grainDirection,
+        // Preserve the exact grainDirection value (string like 'LEFT'|'RIGHT' or boolean/null)
+        grainDirection: safe.grainDirection ?? null,
         laminateCode: safe.laminateCode || '',
         nomW: Number(safe.nomW ?? safe.w ?? 0),
         nomH: Number(safe.nomH ?? safe.h ?? 0),
@@ -319,10 +322,10 @@ function packOnce(pieces: any[], W: number, H: number, kerf: number, strategy: s
     panels.push(b); 
     return b; 
   };
-  
+
   // Start with at least one sheet
   if (panels.length === 0) newBin();
-  
+
   const leftovers: any[] = [];
 
   for (const p of pieces) {
@@ -333,19 +336,19 @@ function packOnce(pieces: any[], W: number, H: number, kerf: number, strategy: s
       rotate: p.rotate,
       rotateAllowed: p.rotate,  // ✅ CRITICAL: Tell bin packer rotation is allowed
       gaddi: p.gaddi,        // forward the flag
-      grainDirection: p.grainDirection, // forward the grain direction flag
+      grainDirection: p.grainDirection, // forward the grain direction flag (string or null)
       laminateCode: p.laminateCode,    // forward the laminate code for grain indicator
       nomW: p.nomW,
       nomH: p.nomH
     };
-    
+
     let placed = null;
-    
+
     // ✅ Try every existing sheet first before creating a new one
     for (let b = 0; b < panels.length && !placed; b++) {
       placed = panels[b].tryPlace(tryP, strategy);
     }
-    
+
     // If doesn't fit on any existing sheet, open a new one and try
     if (!placed) {
       const newSheet = newBin();
@@ -392,14 +395,15 @@ export function optimizeCutlist({
   parts.forEach(p => { 
     for (let i = 0; i < p.qty; i++) {
       expanded.push({ 
-        id: p.id, 
+        id: `${p.id}::${i}`,   // unique per instance
+        origId: p.id,          // original id for back-mapping
         w: p.w, 
         h: p.h, 
-        // Guarantee rotate is boolean and blocked when grainDirection is true:
+        // Guarantee rotate is boolean and blocked when grainDirection is present:
         rotate: !!p.rotate && !p.grainDirection,
         rotateAllowed: !!p.rotate && !p.grainDirection,
         gaddi: !!p.gaddi,
-        grainDirection: !!p.grainDirection,
+        grainDirection: p.grainDirection ?? null, // preserve string/null
         laminateCode: p.laminateCode || '',
         nomW: (p as any).nomW || p.w,
         nomH: (p as any).nomH || p.h
