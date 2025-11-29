@@ -96,8 +96,8 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
   sortParts(parts);
   
   // Debug logging
-  console.groupCollapsed('📦 prepareStandardParts — summary');
-  console.log(`Standard Mode: ON (No Wood Grains)`);
+  console.groupCollapsed('📦 prepareStandardParts — WOOD GRAIN TEST');
+  console.log(`Standard Mode: ON with Wood Grain Constraints`);
   console.table(
     parts.map(pr => ({
       id: pr.id,
@@ -107,6 +107,7 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
       w: pr.w,
       h: pr.h,
       rotate: pr.rotate,
+      grainDirection: pr.grainDirection,
       gaddi: pr.gaddi,
       laminate: pr.laminateCode,
     }))

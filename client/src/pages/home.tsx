@@ -2309,7 +2309,14 @@ export default function Home() {
         .filter((p: any) => Boolean(p))                       // remove undefined/null
         .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
       
-      console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
+      console.group('🌾 MATERIAL SUMMARY - Optimizer Received');
+      console.log('Parts count:', parts.length);
+      parts.forEach(p => {
+        if (p.name.includes('LEFT')) {
+          console.log(`✅ LEFT PANEL: nomW=${p.nomW}, nomH=${p.nomH}, w=${p.w}, h=${p.h}, grainDirection="${p.grainDirection}", rotate=${p.rotate}`);
+        }
+      });
+      console.groupEnd();
       
       // Use multi-pass optimization for maximum efficiency
       const actualSheets = multiPassOptimize(parts, sheetWidth, sheetHeight);
@@ -2318,7 +2325,12 @@ export default function Home() {
       actualSheets.forEach((sheetData: any, sheetIdx: number) => {
         const sheetId = `${groupKey}-${sheetIdx}`;
         sheetData._sheetId = sheetId;
-        sheetData.placed?.forEach((p: any) => { p.grainDirection = group.panels.find(gp => gp.name === p.name)?.grainDirection ?? false; });
+        sheetData.placed?.forEach((p: any) => { 
+          p.grainDirection = group.panels.find(gp => gp.name === p.name)?.grainDirection ?? false; 
+          if (p.id && p.id.includes('LEFT')) {
+            console.log(`✅ OPTIMIZER OUTPUT - LEFT PANEL: placed at x=${p.x}, y=${p.y}, w=${p.w}, h=${p.h}, rotated=${p.rotated}, rotateAllowed=${p.rotateAllowed}`);
+          }
+        });
       });
       
       // Count only non-deleted sheets

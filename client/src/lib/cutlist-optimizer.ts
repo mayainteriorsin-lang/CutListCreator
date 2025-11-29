@@ -102,6 +102,9 @@ class MaxRectsBin {
       const allowRotate = Boolean(piece.rotateAllowed);
       if (piece.grainDirection) {
         // Grain locked: skip rotated orientation entirely
+        if (piece.id && piece.id.includes('LEFT')) {
+          console.log(`🔒 GRAIN LOCKED for ${piece.id}: grainDirection="${piece.grainDirection}" - SKIPPING ROTATION`);
+        }
         continue;
       }
 
