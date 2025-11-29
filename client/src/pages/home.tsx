@@ -2168,7 +2168,7 @@ export default function Home() {
       if (result?.panels) {
         result.panels.forEach((sheet: any, sheetIdx: number) => {
           sheet._sheetId = `${groupKey}-${sheetIdx}`;
-          sheet.placed?.forEach((p: any) => { p.grainDirection = group.panels.find(gp => gp.name === p.name)?.grainDirection ?? false; });
+          sheet.placed?.forEach((p: any) => { p.grainDirection = group.panels.find(gp => String(gp.id) === String(p.id))?.grainDirection ?? false; });
         });
       }
       
@@ -7415,6 +7415,7 @@ export default function Home() {
                 if (result?.panels) {
                   result.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `${prefix}-${groupKey}-manual-${sheetIdx}`;
+                    sheet.placed?.forEach((p: any) => { p.grainDirection = group.panels.find(gp => String(gp.id) === String(p.id))?.grainDirection ?? false; });
                   });
                 }
                 
@@ -7483,6 +7484,7 @@ export default function Home() {
                 if (mergedResult?.panels) {
                   mergedResult.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `${normalizeForGrouping(colourFrameForm.plywoodType)}|||${normalizeForGrouping(colourFrameForm.laminateCode)}-${sheetIdx}`;
+                    sheet.placed?.forEach((p: any) => { p.grainDirection = allParts.find(gp => String(gp.id) === String(p.id))?.grainDirection ?? false; });
                   });
                 }
                 
@@ -7500,6 +7502,7 @@ export default function Home() {
                 if (colourFrameResult?.panels) {
                   colourFrameResult.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `colour-frame-${sheetIdx}`;
+                    sheet.placed?.forEach((p: any) => { p.grainDirection = colourFrameParts.find(gp => String(gp.id) === String(p.id))?.grainDirection ?? false; });
                   });
                 }
                 
