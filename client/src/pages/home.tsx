@@ -2301,7 +2301,7 @@ export default function Home() {
       console.log('Group panels:', group.panels.length);
       console.groupEnd();
       
-      const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
+      const rawParts = preparePartsForOptimizer(group.panels);
       
       // Remove falsy entries and ensure id is a string (prevents optimizer crashes)
       const parts = rawParts
@@ -3671,7 +3671,7 @@ export default function Home() {
         console.log('Group panels:', group.panels.length);
         console.groupEnd();
         
-        const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
+        const rawParts = preparePartsForOptimizer(group.panels);
         
         // Remove falsy entries and ensure id is a string (prevents optimizer crashes)
         const parts = rawParts
@@ -4419,7 +4419,6 @@ export default function Home() {
                                     variant="outline"
                                     onClick={() => {
                                       const newValue = !isEnabled;
-                                      handleToggleLaminate(code, newValue);
                                       toast({
                                         title: newValue ? "Wood Grain Enabled" : "Wood Grain Disabled",
                                         description: `${code} ${newValue ? 'now uses' : 'no longer uses'} wood grain memory`,
