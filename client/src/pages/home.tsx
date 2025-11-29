@@ -7689,8 +7689,8 @@ export default function Home() {
                                 const isGaddi = panel.gaddi === true;
                                 
                                 // For wood grain panels, show original nominal dimensions; otherwise show display dims
-                                const showW = panel.grainDirection === true && panel.nomW ? panel.nomW : displayW;
-                                const showH = panel.grainDirection === true && panel.nomH ? panel.nomH : displayH;
+                                const showW = (panel.grainDirection && panel.nomW) ? panel.nomW : displayW;
+                                const showH = (panel.grainDirection && panel.nomH) ? panel.nomH : displayH;
                                 
                                 console.log(`  Panel[${idx}] ${panelName}:`);
                                 console.log(`    - grainDirection: ${panel.grainDirection} (RESTORED: ${panel.grainDirection === true ? '✅' : '❌'})`);
