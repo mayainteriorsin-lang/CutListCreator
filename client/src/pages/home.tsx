@@ -28,15 +28,12 @@ import { Eye, ChevronsUpDown, Check, Loader2, Save } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-// ✅ SEPARATED MODULES: Wood Grain and Standard code are now completely separate
-import { prepareWoodGrainParts } from '@/features/wood-grain/dimensional-mapping';
-import { optimizeWoodGrainCutlist } from '@/features/wood-grain/optimizer';
+// ✅ MODULES: Simple panel optimization
 import { calculateGaddiLineDirection, shouldShowGaddiMarking } from '@/features/gaddi';
 import { prepareStandardParts } from '@/features/standard/dimensional-mapping';
 import { optimizeStandardCutlist } from '@/features/standard/optimizer';
 import { getDisplayDimensions } from '@/features/cutlist/core/efficiency';
 import { validateGaddiRule } from '@/features/gaddi';
-import { onToggleWoodGrain, applyWoodGrainToParts, loadAllPrefs } from '@/features/wood-grain/memory';
 import { optimizeCutlist } from '@/lib/cutlist-optimizer';
 
 // Cabinet form memory helpers
@@ -150,30 +147,12 @@ const saveShutterFormMemory = (values: ShutterFormMemory) => {
 };
 
 /**
- * WRAPPER FUNCTION: Delegates to separated wood-grain or standard modules
- * This ensures wood grain and standard code never mix
- * 
- * @param panels - Array of panels with name, width, height, laminateCode, grainDirection (from database)
- * @param woodGrainsPreferences - Per-laminate wood grain preferences (from database)
- * @returns Array of parts ready for optimizer (and MUTATES each panel with displayW/displayH)
+ * SIMPLE: Prepare panels for optimizer
+ * @param panels - Array of panels with name, width, height, laminateCode
+ * @returns Array of parts ready for optimizer
  */
-function preparePartsForOptimizer(
-  panels: Array<any>,
-  woodGrainsPreferences: Record<string, boolean> = {},
-  masterWoodGrainsToggleOn: boolean = false // ✅ Master toggle parameter
-) {
-  // ✅ CRITICAL FIX: Check if ANY laminate code has wood grains ENABLED in database preferences OR if master toggle is ON
-  const hasWoodGrainPanels = masterWoodGrainsToggleOn || panels.some(panel => {
-    const laminateCode = String(panel.laminateCode || '').trim();
-    const frontCode = laminateCode.split('+')[0].trim(); // Extract front code
-    return woodGrainsPreferences[frontCode] === true; // Check database preference
-  });
-  
-  if (hasWoodGrainPanels) {
-    return prepareWoodGrainParts(panels, woodGrainsPreferences);
-  } else {
-    return prepareStandardParts(panels);
-  }
+function preparePartsForOptimizer(panels: Array<any>) {
+  return prepareStandardParts(panels);
 }
 
 /**
@@ -206,30 +185,19 @@ function getDisplayDims(panel: any) {
 }
 
 /**
- * WRAPPER FUNCTION: Delegates to separated wood-grain or standard optimization
- * This ensures wood grain and standard code never mix
- * 
- * @param parts - Array of parts to optimize (already prepared with dimensional mapping)
+ * SIMPLE: Optimize parts using standard optimizer
+ * @param parts - Array of parts to optimize
  * @param sheetWidth - Sheet width (default 1210mm)
  * @param sheetHeight - Sheet height (default 2420mm)
- * @returns Best optimization result with highest efficiency
+ * @returns Best optimization result
  */
 function multiPassOptimize(
   parts: Array<any>,
   sheetWidth: number = 1210,
   sheetHeight: number = 2420
 ) {
-  // ✅ COMPLETE SEPARATION: Delegate to appropriate module based on parts' grainFlag
-  // Check first part to determine if this is wood grain or standard mode
-  const isWoodGrainMode = parts.length > 0 && parts[0].grainFlag === true;
-  
-  if (isWoodGrainMode) {
-    console.log('🌾 Using WOOD GRAIN optimizer module');
-    return optimizeWoodGrainCutlist(parts, sheetWidth, sheetHeight);
-  } else {
-    console.log('📦 Using STANDARD optimizer module');
-    return optimizeStandardCutlist(parts, sheetWidth, sheetHeight);
-  }
+  console.log('📦 Using standard optimizer');
+  return optimizeStandardCutlist(parts, sheetWidth, sheetHeight);
 }
 
 /**
@@ -666,90 +634,12 @@ export default function Home() {
     fetchWoodGrainsPreferences();
   }, []);
 
-  // ✅ LOAD GRAIN MAP FROM LOCALSTORAGE ON MOUNT
-  // This ensures the UI shows the correct ON/OFF state for previously saved wood grain toggles
-  useEffect(() => {
-    const savedPrefs = loadAllPrefs();
-    setGrainMap(savedPrefs);
-    console.log('🌾 Loaded grain map from localStorage:', savedPrefs);
-  }, []);
-
-  // Toggle wood grain handler with localStorage persistence
-  function handleToggleLaminate(code: string, value: boolean) {
-    onToggleWoodGrain(code, value, (lamCode: string, newVal: boolean) => {
-      setGrainMap((s) => ({ ...s, [lamCode]: newVal }));
-    });
-  }
 
   // ✅ FIX #1: Improved readiness flag - requires BOTH loading finished AND successful load
   // Prevents calculations running when database fetch fails or returns empty
   // ✅ OPTIMIZATION: Show form immediately, don't wait for wood grains to load
   const woodGrainsReady = true; // Always show form instantly, preferences load in background
   
-  // ✅ FIX #3: Auto-update ALL cabinets when wood grains preferences finish loading
-  // This ensures existing cabinets get correct grain orientation without manual editing
-  const [woodGrainsVersion, setWoodGrainsVersion] = useState(0); // Version counter to force recalculation
-  
-  useEffect(() => {
-    if (!woodGrainsPreferencesLoading && Object.keys(woodGrainsPreferences).length > 0) {
-      console.log('🔄 Wood grains preferences auto-update triggered');
-      console.log('📊 Current state:', {
-        preferences: woodGrainsPreferences,
-        cabinetCount: cabinets.length
-      });
-      
-      // ✅ DIRECT LINK: Recompute grain direction for ALL existing cabinets using database preferences only
-      setCabinets(prevCabinets => {
-        const updated = prevCabinets.map(cabinet => {
-          const grainDirections = computeGrainDirections(cabinet, woodGrainsPreferences);
-          console.log(`🏗️ Updating cabinet "${cabinet.name}":`, {
-            topCode: cabinet.topPanelLaminateCode,
-            hasWoodGrains: woodGrainsPreferences[(cabinet.topPanelLaminateCode || '').split('+')[0].trim()],
-            willSetGrain: grainDirections.topPanelGrainDirection
-          });
-          return {
-            ...cabinet,
-            ...grainDirections
-          };
-        });
-        return updated;
-      });
-      
-      // ✅ DIRECT LINK: Also update manual panels grain direction using database preferences only
-      setManualPanels(prevPanels =>
-        prevPanels.map(panel => {
-          const baseLaminateCode = (panel.laminateCode || '').split('+')[0].trim();
-          const hasWoodGrains = woodGrainsPreferences[baseLaminateCode] === true;
-          
-          return {
-            ...panel,
-            grainDirection: hasWoodGrains // ✅ DIRECT LINK: Database only, no toggle required
-          };
-        })
-      );
-      
-      // ✅ DIRECT LINK: Also update the current form being edited
-      // This ensures Individual Panel settings display reflects database preferences
-      const currentFormValues = form.getValues();
-      const formGrainDirections = computeGrainDirections(currentFormValues as Cabinet, woodGrainsPreferences);
-      
-      form.setValue('topPanelGrainDirection', formGrainDirections.topPanelGrainDirection);
-      form.setValue('bottomPanelGrainDirection', formGrainDirections.bottomPanelGrainDirection);
-      form.setValue('leftPanelGrainDirection', formGrainDirections.leftPanelGrainDirection);
-      form.setValue('rightPanelGrainDirection', formGrainDirections.rightPanelGrainDirection);
-      form.setValue('backPanelGrainDirection', formGrainDirections.backPanelGrainDirection);
-      form.setValue('shutterGrainDirection', formGrainDirections.shutterGrainDirection);
-      form.setValue('shelvesGrainDirection', formGrainDirections.shelvesGrainDirection);
-      form.setValue('centerPostGrainDirection', formGrainDirections.centerPostGrainDirection);
-      
-      console.log('📝 Updated form grain directions:', formGrainDirections);
-      
-      // Increment version to force all cutting list calculations to re-run with updated cabinet data
-      setWoodGrainsVersion(prev => prev + 1);
-      
-      console.log('✅ Auto-update complete: All cabinets (including shelves & center posts) and manual panels updated with correct wood grain orientation');
-    }
-  }, [woodGrainsPreferencesLoading, woodGrainsPreferences]); // ✅ DIRECT LINK: No masterWoodGrains dependency needed
 
   // ✅ SAVE SHUTTER LAMINATE CODES IN REAL-TIME (auto-save on change)
   // Use useRef to prevent infinite loop from watchedValues changing on every render
@@ -2194,10 +2084,10 @@ export default function Home() {
       console.log('Group panels:', group.panels.length);
       console.groupEnd();
       
-      const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
+      const rawParts = preparePartsForOptimizer(group.panels);
       const parts = rawParts
-        .filter(p => Boolean(p))
-        .map((p, i) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
+        .filter((p: any) => Boolean(p))
+        .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
       
       console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
       
@@ -2321,7 +2211,7 @@ export default function Home() {
       }));
       
       const combinedParts = [...existingPanels, ...manualParts];
-      const combinedResult = optimizeCutlist({ parts: applyWoodGrainToParts(combinedParts), sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
+      const combinedResult = optimizeCutlist({ parts: combinedParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
       
       if (combinedResult?.panels && combinedResult.panels.length === 1) {
         combinedResult.panels[0]._sheetId = targetSheetId;
@@ -7459,7 +7349,7 @@ export default function Home() {
                   }))
                 );
                 
-                const result = optimizeCutlist({ parts: applyWoodGrainToParts(manualParts), sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
+                const result = optimizeCutlist({ parts: manualParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
                 const laminateDisplay = getLaminateDisplay(group.laminateCode);
                 
                 const prefix = group.isBackPanel ? 'back' : 'regular';
@@ -7539,7 +7429,7 @@ export default function Home() {
                   ...colourFrameParts
                 ];
                 
-                const mergedResult = optimizeCutlist({ parts: applyWoodGrainToParts(allParts), sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
+                const mergedResult = optimizeCutlist({ parts: allParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
                 
                 if (mergedResult?.panels) {
                   mergedResult.panels.forEach((sheet: any, sheetIdx: number) => {
@@ -7565,7 +7455,7 @@ export default function Home() {
               } else {
                 // Create new entry if no match
                 console.log('✅ Colour Frame created NEW sheet (no matching plywood/laminate)');
-                const colourFrameResult = optimizeCutlist({ parts: applyWoodGrainToParts(colourFrameParts), sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
+                const colourFrameResult = optimizeCutlist({ parts: colourFrameParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
                 const colourFrameLaminateDisplay = getLaminateDisplay(colourFrameForm.laminateCode);
                 
                 if (colourFrameResult?.panels) {
