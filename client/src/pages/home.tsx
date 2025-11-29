@@ -2214,10 +2214,9 @@ export default function Home() {
             const found = group.panels.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
             if (found) {
               p.grainDirection = found.grainDirection ?? null;
-              p.type = found.name || p.name;
-              p.depth = found.width ?? p.width ?? 450; // Use cabinet width as depth proxy
+              p.type = (found as any).name || p.name;
+              p.depth = (found as any).width ?? p.width ?? 450;
             }
-            // CRITICAL: compute X/Y display dims before rendering
             computeDisplayDims(p);
           });
         });
@@ -7471,10 +7470,9 @@ export default function Home() {
                       const found = group.panels.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
                       if (found) {
                         p.grainDirection = found.grainDirection ?? null;
-                        p.type = found.name || p.name;
-                        p.depth = found.width ?? p.width ?? 450;
+                        p.type = (found as any).name || p.name;
+                        p.depth = (found as any).width ?? p.width ?? 450;
                       }
-                      // CRITICAL: compute X/Y display dims before rendering
                       computeDisplayDims(p);
                     });
                   });
@@ -7550,10 +7548,9 @@ export default function Home() {
                       const found = allParts.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
                       if (found) {
                         p.grainDirection = found.grainDirection ?? null;
-                        p.type = found.name || p.name;
-                        p.depth = found.width ?? p.width ?? 450;
+                        p.type = (found as any).name || p.name;
+                        p.depth = (found as any).width ?? p.width ?? 450;
                       }
-                      // CRITICAL: compute X/Y display dims before rendering
                       computeDisplayDims(p);
                     });
                   });
@@ -7573,15 +7570,13 @@ export default function Home() {
                 if (colourFrameResult?.panels) {
                   colourFrameResult.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `colour-frame-${sheetIdx}`;
-                    // Restore grain and compute display dims for every placed panel
                     sheet.placed?.forEach((p: any) => { 
                       const found = colourFrameParts.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
                       if (found) {
                         p.grainDirection = found.grainDirection ?? null;
-                        p.type = found.name || p.name;
-                        p.depth = found.width ?? p.width ?? 450;
+                        p.type = (found as any).name || p.name;
+                        p.depth = (found as any).width ?? p.width ?? 450;
                       }
-                      // CRITICAL: compute X/Y display dims before rendering
                       computeDisplayDims(p);
                     });
                   });
