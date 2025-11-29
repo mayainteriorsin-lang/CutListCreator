@@ -22,7 +22,6 @@ import DesignCenter from "../components/ui/DesignCenter";
 import Spreadsheet from '@/components/Spreadsheet';
 import { Cabinet, cabinetSchema, ShutterType, Panel, PanelGroup, CuttingListSummary, LaminateCode, cabinetTypes, CabinetType, LaminateMemory, PlywoodBrandMemory } from '@shared/schema';
 import * as XLSX from 'xlsx';
-import { optimizeCutlist } from '@/lib/cutlist-optimizer';
 import { generateCutlistPDF } from '@/lib/pdf-export';
 import { generateMaterialListCSV } from '@/lib/material-list-export';
 import { Eye, ChevronsUpDown, Check, Loader2, Save } from 'lucide-react';
