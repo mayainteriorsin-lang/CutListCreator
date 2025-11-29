@@ -1,0 +1,111 @@
+One-line rule (say it out loud)
+
+Before drawing or PDF, always compute displayWidth = X, displayHeight = Y from the panel TYPE.
+That stops the swap.
+
+Do these 3 tiny steps now (copy-paste exactly)
+Step 1 — Add this helper (paste near top of home.tsx)
+// --- SMALL HELPER: normalize display width/height for each panel ---
+function computeDisplayDims(panel: any) {
+  const type = (panel?.type || panel?.name || "").toString().toUpperCase();
+
+  // X = horizontal (sheet width 1210)
+  // Y = vertical   (sheet height 2420)
+  let displayWidth = 0;   // X
+  let displayHeight = 0;  // Y
+
+  if (type.includes("TOP") || type.includes("BOTTOM")) {
+    // TOP/BOTTOM: width -> Y, depth -> X  (show Y×X)
+    displayWidth  = Number(panel.depth ?? panel.w ?? panel.width ?? 0);   // X-axis
+    displayHeight = Number(panel.width ?? panel.h ?? panel.height ?? 0);  // Y-axis
+  } else if (type.includes("LEFT") || type.includes("RIGHT")) {
+    // LEFT/RIGHT: depth -> X, height -> Y  (show X×Y)
+    displayWidth  = Number(panel.depth ?? panel.w ?? panel.width ?? 0);   // X-axis (depth)
+    displayHeight = Number(panel.height ?? panel.h ?? panel.nomH ?? 0);   // Y-axis (height)
+  } else {
+    // fallback: width -> X, height -> Y
+    displayWidth  = Number(panel.width ?? panel.w ?? 0);
+    displayHeight = Number(panel.height ?? panel.h ?? 0);
+  }
+
+  // put fields back on panel so renderer & pdf can use them directly
+  panel.displayWidth  = displayWidth;
+  panel.displayHeight = displayHeight;
+  panel.displayLabel  = `${displayWidth}×${displayHeight}`; // e.g. "450×800"
+  return panel;
+}
+
+Step 2 — After optimizer returns (two places you already know) — add this block right after you set sheet._sheetId
+
+Paste this in both spots where you process optimizer results (Preview Dialog and Material Summary):
+
+// restore grain and compute display dims for every placed panel
+sheet.placed?.forEach((p:any) => {
+  const orig = group?.panels?.find((gp:any) => gp.id === p.origId || gp.id === p.id || gp.name === p.name);
+  p.grainDirection = orig?.grainDirection ?? p.grainDirection ?? null;
+  p.grainEnabled   = Boolean(orig?.grainEnabled ?? orig?.woodGrainsEnabled ?? p.grainEnabled);
+  p.laminateCode   = orig?.laminateCode ?? p.laminateCode ?? null;
+
+  // IMPORTANT: normalize X/Y for rendering and PDF
+  computeDisplayDims(p);
+});
+
+
+Why: this ensures each placed panel has displayWidth (X) and displayHeight (Y) computed correctly before the UI draws it.
+
+Step 3 — In the draw/render code, use these fields (replace old width/height usage)
+
+Wherever you draw the rectangle or add label (canvas ctx.strokeRect or React element width/height or PDF rect), change to use displayWidth and displayHeight instead of w/h/width/height.
+
+Example canvas draw snippet to replace your old one:
+
+const p = computeDisplayDims(panel); // safe to call again
+const w = p.displayWidth * scale;   // horizontal size (X)
+const h = p.displayHeight * scale;  // vertical size (Y)
+
+ctx.strokeRect(originX, originY, w, h);
+ctx.fillText(p.displayLabel, originX + 4, originY + 12);
+ctx.fillText(`grain:${p.grainDirection ?? p.laminateCode ?? 'none'}`, originX + 4, originY + 26);
+
+
+For PDF, same: doc.rect(x, y, p.displayWidth * pdfScale, p.displayHeight * pdfScale); and use p.displayLabel for the label.
+
+Quick checks (paste in browser console after preview)
+
+Check a placed LEFT panel:
+
+// find one LEFT panel from result
+const left = result.panels.flatMap(s=>s.placed).find(p=> (p.type||'').toUpperCase().includes('LEFT'));
+console.log('LEFT panel dims', left.displayLabel, left.displayWidth, left.displayHeight, 'grain:', left.grainDirection, left.grainEnabled);
+
+
+You should see: LEFT panel dims 450×800 450 800 grain: ...
+
+Check a TOP panel:
+
+const top = result.panels.flatMap(s=>s.placed).find(p=> (p.type||'').toUpperCase().includes('TOP'));
+console.log('TOP panel dims', top.displayLabel, top.displayWidth, top.displayHeight);
+
+
+You should see: TOP panel dims 564×450 450 564 (remember displayWidth is X=450, displayHeight is Y=564 so label shows 564×450 as Y×X if you print that way — we used displayLabel as X×Y; if you want Y×X display for TOP/BOTTOM change label format)
+
+Note: If you want the printed label for TOP/BOTTOM to appear as 564×450 (Y×X), show \${p.displayHeight}×${p.displayWidth}`in the label text for TOP/BOTTOM only. But for geometry we usedisplayWidth= X,displayHeight` = Y.
+
+Tiny extra: show TOP/BOTTOM label as Y×X (if you prefer)
+
+If in your sheet the left top shows 450×564 and you want it displayed 564×450, then when creating the label do:
+
+const label = (type.includes('TOP')||type.includes('BOTTOM'))
+  ? `${p.displayHeight}×${p.displayWidth}`   // show Y×X
+  : `${p.displayWidth}×${p.displayHeight}`;  // show X×Y
+ctx.fillText(label, originX + 4, originY + 12);
+
+Final tiny checklist (do in order)
+
+Paste computeDisplayDims helper into top of home.tsx.
+
+Add the sheet.placed?.forEach(... computeDisplayDims(p)) block after each sheet._sheetId = ... line (both places).
+
+Replace draw/PDF size uses to use displayWidth and displayHeight.
+
+Run preview, open console, run the quick checks above.

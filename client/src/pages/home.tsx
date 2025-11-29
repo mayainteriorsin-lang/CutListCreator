@@ -72,6 +72,36 @@ const loadCabinetFormMemory = (): Partial<CabinetFormMemory> => {
   return {};
 };
 
+// --- HELPER: Compute correct X/Y display dimensions based on panel TYPE ---
+function computeDisplayDims(panel: any) {
+  const type = (panel?.type || panel?.name || '').toString().toUpperCase();
+
+  // X = horizontal (sheet width 1210)
+  // Y = vertical   (sheet height 2420)
+  let displayWidth = 0;   // X
+  let displayHeight = 0;  // Y
+
+  if (type.includes('TOP') || type.includes('BOTTOM')) {
+    // TOP/BOTTOM: width -> Y, depth -> X  (show X×Y format)
+    displayWidth  = Number(panel.depth ?? panel.nomH ?? panel.h ?? panel.height ?? 0);   // X-axis
+    displayHeight = Number(panel.width ?? panel.nomW ?? panel.w ?? 0);   // Y-axis
+  } else if (type.includes('LEFT') || type.includes('RIGHT')) {
+    // LEFT/RIGHT: depth -> X, height -> Y  (show X×Y format)
+    displayWidth  = Number(panel.depth ?? panel.nomW ?? panel.w ?? panel.width ?? 0);   // X-axis (depth)
+    displayHeight = Number(panel.height ?? panel.nomH ?? panel.h ?? 0);   // Y-axis (height)
+  } else {
+    // fallback: width -> X, height -> Y
+    displayWidth  = Number(panel.width ?? panel.w ?? 0);
+    displayHeight = Number(panel.height ?? panel.h ?? 0);
+  }
+
+  // Store computed dims back on panel so renderer & PDF can use them directly
+  panel.displayWidth  = displayWidth;
+  panel.displayHeight = displayHeight;
+  panel.displayLabel  = `${displayWidth}×${displayHeight}`;
+  return panel;
+}
+
 // Save cabinet form values to localStorage (with SSR safety)
 const saveCabinetFormMemory = (values: CabinetFormMemory) => {
   if (typeof window === 'undefined') return;
@@ -2179,9 +2209,16 @@ export default function Home() {
       if (result?.panels) {
         result.panels.forEach((sheet: any, sheetIdx: number) => {
           sheet._sheetId = `${groupKey}-${sheetIdx}`;
+          // Restore grain and compute display dims for every placed panel
           sheet.placed?.forEach((p: any) => { 
             const found = group.panels.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
-            if (found) p.grainDirection = found.grainDirection ?? null;
+            if (found) {
+              p.grainDirection = found.grainDirection ?? null;
+              p.type = found.name || p.name;
+              p.depth = found.width ?? p.width ?? 450; // Use cabinet width as depth proxy
+            }
+            // CRITICAL: compute X/Y display dims before rendering
+            computeDisplayDims(p);
           });
         });
       }
@@ -7429,9 +7466,16 @@ export default function Home() {
                 if (result?.panels) {
                   result.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `${prefix}-${groupKey}-manual-${sheetIdx}`;
+                    // Restore grain and compute display dims for every placed panel
                     sheet.placed?.forEach((p: any) => { 
                       const found = group.panels.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
-                      if (found) p.grainDirection = found.grainDirection ?? null;
+                      if (found) {
+                        p.grainDirection = found.grainDirection ?? null;
+                        p.type = found.name || p.name;
+                        p.depth = found.width ?? p.width ?? 450;
+                      }
+                      // CRITICAL: compute X/Y display dims before rendering
+                      computeDisplayDims(p);
                     });
                   });
                 }
@@ -7501,9 +7545,16 @@ export default function Home() {
                 if (mergedResult?.panels) {
                   mergedResult.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `${normalizeForGrouping(colourFrameForm.plywoodType)}|||${normalizeForGrouping(colourFrameForm.laminateCode)}-${sheetIdx}`;
+                    // Restore grain and compute display dims for every placed panel
                     sheet.placed?.forEach((p: any) => { 
                       const found = allParts.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
-                      if (found) p.grainDirection = found.grainDirection ?? null;
+                      if (found) {
+                        p.grainDirection = found.grainDirection ?? null;
+                        p.type = found.name || p.name;
+                        p.depth = found.width ?? p.width ?? 450;
+                      }
+                      // CRITICAL: compute X/Y display dims before rendering
+                      computeDisplayDims(p);
                     });
                   });
                 }
@@ -7522,9 +7573,16 @@ export default function Home() {
                 if (colourFrameResult?.panels) {
                   colourFrameResult.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `colour-frame-${sheetIdx}`;
+                    // Restore grain and compute display dims for every placed panel
                     sheet.placed?.forEach((p: any) => { 
                       const found = colourFrameParts.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
-                      if (found) p.grainDirection = found.grainDirection ?? null;
+                      if (found) {
+                        p.grainDirection = found.grainDirection ?? null;
+                        p.type = found.name || p.name;
+                        p.depth = found.width ?? p.width ?? 450;
+                      }
+                      // CRITICAL: compute X/Y display dims before rendering
+                      computeDisplayDims(p);
                     });
                   });
                 }
@@ -7699,9 +7757,9 @@ export default function Home() {
                                 
                                 const isGaddi = panel.gaddi === true;
                                 
-                                // For wood grain panels, show original nominal dimensions; otherwise show display dims
-                                const showW = (panel.grainDirection && panel.nomW) ? panel.nomW : displayW;
-                                const showH = (panel.grainDirection && panel.nomH) ? panel.nomH : displayH;
+                                // ✅ CRITICAL: Use computed display dimensions (X/Y based on panel type)
+                                const showW = panel.displayWidth ?? displayW;
+                                const showH = panel.displayHeight ?? displayH;
                                 
                                 console.log(`  Panel[${idx}] ${panelName}:`);
                                 console.log(`    - grainDirection: ${panel.grainDirection} (RESTORED: ${panel.grainDirection === true ? '✅' : '❌'})`);
