@@ -2313,7 +2313,7 @@ export default function Home() {
       console.log('Parts count:', parts.length);
       parts.forEach(p => {
         if (p.name.includes('LEFT')) {
-          console.log(`✅ LEFT PANEL: nomW=${p.nomW}, nomH=${p.nomH}, w=${p.w}, h=${p.h}, grainDirection="${p.grainDirection}", rotate=${p.rotate}`);
+          console.log(`✅ LEFT PANEL: nomW=${p.nomW}, nomH=${p.nomH}, w=${p.w}, h=${p.h}, rotate=${p.rotate}, woodGrainsEnabled=${p.woodGrainsEnabled}`);
         }
       });
       console.groupEnd();

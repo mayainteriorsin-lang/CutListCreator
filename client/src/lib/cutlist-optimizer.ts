@@ -98,12 +98,12 @@ class MaxRectsBin {
         }
       }
 
-      // If the piece is locked by grainDirection, do NOT even try rotated placement.
+      // Check rotation allowance - simple direct check
       const allowRotate = Boolean(piece.rotateAllowed);
-      if (piece.grainDirection) {
-        // Grain locked: skip rotated orientation entirely
+      if (!allowRotate) {
+        // Rotation disabled for this piece
         if (piece.id && piece.id.includes('LEFT')) {
-          console.log(`🔒 GRAIN LOCKED for ${piece.id}: grainDirection="${piece.grainDirection}" - SKIPPING ROTATION`);
+          console.log(`🔒 ROTATION BLOCKED for ${piece.id}: rotateAllowed=false - SKIPPING ROTATION ATTEMPTS`);
         }
         continue;
       }
