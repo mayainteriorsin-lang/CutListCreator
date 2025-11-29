@@ -25,6 +25,7 @@ export const cabinetTypes = [
 export type CabinetType = typeof cabinetTypes[number]['value'];
 
 export const panelSchema = z.object({
+  id: z.string().optional(), // Unique panel ID with grain status (e.g., "cabinet-TOP-grain-true")
   name: z.string(),
   width: z.number().positive(),
   height: z.number().positive(),
