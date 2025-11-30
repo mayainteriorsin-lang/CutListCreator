@@ -70,7 +70,6 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
     p.displayH = h;
     p.nomW = nomW;
     p.nomH = nomH;
-    p.grainFlag = false;
     p.woodGrainsEnabled = woodGrainsEnabled;
     
     // 🆔 CREATE UNIQUE PANEL ID based on panel type
@@ -124,11 +123,9 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
       rotate: rotateAllowed,  // Axis rule determines if rotation possible
       gaddi: p.gaddi === true,
       laminateCode,
-      grainFlag: false,
-      grainDirection: null,
       woodGrainsEnabled: woodGrainsEnabled,
-      panelType: panelType,  // Store for logging/debugging
-      axisLockReason: axisLockReason,  // Why rotation is restricted
+      panelType: panelType,  // 📐 Panel type for axis-lock
+      axisLockReason: axisLockReason,  // 📐 Specific axis constraint (e.g., "height(Y)×depth(X)")
       originalPanel: p
     };
     

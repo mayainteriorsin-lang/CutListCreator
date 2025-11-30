@@ -26,8 +26,7 @@ interface PlacedPiece {
   rotated: boolean;
   rotateAllowed: boolean;
   gaddi?: boolean;
-  grainDirection?: string | boolean | null; // preserve original grain value ('LEFT'|'RIGHT'|null) or boolean for older data
-  laminateCode?: string;    // Laminate code for grain indicator logic
+  laminateCode?: string;
   nomW?: number;   // nominal width (original panel size)
   nomH?: number;   // nominal height (original panel size)
 }
@@ -39,8 +38,7 @@ interface Part {
   qty: number;
   rotate: boolean;
   gaddi?: boolean;
-  grainDirection?: string | boolean | null; // preserve direction string or null
-  laminateCode?: string;    // Laminate code for grain indicator logic
+  laminateCode?: string;
 }
 
 const area = (r: Rect) => r.w * r.h;
@@ -134,12 +132,11 @@ class MaxRectsBin {
       w: best.rect.w - this.kerf,
       h: best.rect.h - this.kerf,
       rotated: !!best.rot,
-      rotateAllowed: !!piece.rotate,  // 🔒 Store whether rotation was allowed
-      gaddi: !!piece.gaddi,         // carry the gaddi flag
-      grainDirection: piece.grainDirection ?? null, // preserve exact grain value (e.g. 'LEFT' | 'RIGHT' | null)
-      laminateCode: piece.laminateCode || '', // carry the laminate code
-      nomW: (piece as any).nomW || piece.w,   // nominal width
-      nomH: (piece as any).nomH || piece.h    // nominal height
+      rotateAllowed: !!piece.rotate,  // 📐 Whether rotation was allowed by axis-lock
+      gaddi: !!piece.gaddi,
+      laminateCode: piece.laminateCode || '',
+      nomW: (piece as any).nomW || piece.w,
+      nomH: (piece as any).nomH || piece.h
     };
 
     this.splitAll(best.rect);
@@ -302,16 +299,11 @@ function packOnce(pieces: any[], W: number, H: number, kerf: number, strategy: s
     .map((p, i) => {
       const safe = p || {};
       return {
-        // ensure id is always a string
         id: String(safe.id ?? safe.name ?? `part-${i}`),
-        // ensure numeric width/height (fallback to 0)
         w: Number(safe.w ?? safe.nomW ?? 0),
         h: Number(safe.h ?? safe.nomH ?? 0),
-        // keep any other fields used later (rotate, laminate, original, etc)
         rotate: !!safe.rotate,
         gaddi: !!safe.gaddi,
-        // Preserve the exact grainDirection value (string like 'LEFT'|'RIGHT' or boolean/null)
-        grainDirection: safe.grainDirection ?? null,
         laminateCode: safe.laminateCode || '',
         nomW: Number(safe.nomW ?? safe.w ?? 0),
         nomH: Number(safe.nomH ?? safe.h ?? 0),
@@ -333,16 +325,17 @@ function packOnce(pieces: any[], W: number, H: number, kerf: number, strategy: s
 
   for (const p of pieces) {
     const tryP = {
-      id: p.id,           // safe string now
+      id: p.id,
       w: p.w + kerf,
       h: p.h + kerf,
       rotate: p.rotate,
-      rotateAllowed: p.rotate,  // ✅ CRITICAL: Tell bin packer rotation is allowed
-      gaddi: p.gaddi,        // forward the flag
-      grainDirection: p.grainDirection, // forward the grain direction flag (string or null)
-      laminateCode: p.laminateCode,    // forward the laminate code for grain indicator
+      rotateAllowed: p.rotate,  // 📐 Axis-lock determines rotation
+      gaddi: p.gaddi,
+      laminateCode: p.laminateCode,
       nomW: p.nomW,
-      nomH: p.nomH
+      nomH: p.nomH,
+      panelType: (p as any).panelType,  // 📐 Panel type
+      axisLockReason: (p as any).axisLockReason  // 📐 Axis constraint
     };
     
     let placed = null;
@@ -393,30 +386,25 @@ export function optimizeCutlist({
     console.warn('⚠️ Some parts are larger than sheet in current orientation:', oversized.slice(0, 10));
   }
 
-  // When expanding each part into instances, copy rotate/grain flags and nom sizes:
+  // Expand each part into instances with axis-lock constraints
   const expanded: any[] = [];
   const expandLog: any[] = [];
   
   parts.forEach(p => { 
     for (let i = 0; i < p.qty; i++) {
-      // 🆔 UNIQUE INSTANCE ID: Type_Count_OriginalID_Instance
       const instanceId = `${p.id}::${i}`;
-      
-      // 🆕 AXIS-LOCK WOOD GRAIN CONSTRAINT
       const rotateFlag = !!p.rotate;
-      const rotateAllowedFlag = !!p.rotate;
       const panelType = (p as any).panelType || 'panel';
       const axisLockReason = (p as any).axisLockReason;
       
       const piece = { 
-        id: instanceId,   // unique per instance
-        origId: p.id,          // original id for back-mapping
+        id: instanceId,
+        origId: p.id,
         w: p.w, 
         h: p.h, 
         rotate: rotateFlag,
-        rotateAllowed: rotateAllowedFlag,
+        rotateAllowed: rotateFlag,  // 📐 Axis-lock determines if rotation allowed
         gaddi: !!p.gaddi,
-        grainDirection: p.grainDirection ?? null,
         laminateCode: p.laminateCode || '',
         nomW: (p as any).nomW || p.w,
         nomH: (p as any).nomH || p.h,
@@ -426,7 +414,6 @@ export function optimizeCutlist({
       
       expanded.push(piece);
       
-      // 📋 Log each expanded instance with axis-lock status
       let axisConstraint = 'none';
       if ((p as any).woodGrainsEnabled && axisLockReason) {
         axisConstraint = `📐 ${axisLockReason} locked`;
