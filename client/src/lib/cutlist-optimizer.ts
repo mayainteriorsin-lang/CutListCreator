@@ -98,14 +98,13 @@ class MaxRectsBin {
         }
       }
 
-      // Check rotation allowance - simple direct check
+      // 🔒 CHECK ROTATION CONSTRAINT - Direct check on rotateAllowed flag
       const allowRotate = Boolean(piece.rotateAllowed);
       if (!allowRotate) {
-        // Rotation disabled for this piece
-        if (piece.id && piece.id.includes('LEFT')) {
-          console.log(`🔒 ROTATION BLOCKED for ${piece.id}: rotateAllowed=false - SKIPPING ROTATION ATTEMPTS`);
-        }
-        continue;
+        // 🆔 Rotation disabled for this specific unique instance
+        // Don't log for every piece - too noisy
+        // console.log(`🔒 NO ROTATION for ${piece.id} (${piece.w}×${piece.h}mm)`);
+        continue;  // Skip rotation attempts
       }
 
       // Otherwise try rotated orientation if rotation allowed
@@ -134,7 +133,7 @@ class MaxRectsBin {
       w: best.rect.w - this.kerf,
       h: best.rect.h - this.kerf,
       rotated: !!best.rot,
-      rotateAllowed: !!piece.rotate,
+      rotateAllowed: !!piece.rotate,  // 🔒 Store whether rotation was allowed
       gaddi: !!piece.gaddi,         // carry the gaddi flag
       grainDirection: piece.grainDirection ?? null, // preserve exact grain value (e.g. 'LEFT' | 'RIGHT' | null)
       laminateCode: piece.laminateCode || '', // carry the laminate code
@@ -395,24 +394,50 @@ export function optimizeCutlist({
 
   // When expanding each part into instances, copy rotate/grain flags and nom sizes:
   const expanded: any[] = [];
+  const expandLog: any[] = [];
+  
   parts.forEach(p => { 
     for (let i = 0; i < p.qty; i++) {
-      expanded.push({ 
-        id: `${p.id}::${i}`,   // unique per instance
+      // 🆔 UNIQUE INSTANCE ID: Type_Count_OriginalID_Instance
+      const instanceId = `${p.id}::${i}`;
+      
+      // 🔒 WOOD GRAIN CONSTRAINT: If rotate flag is false, NO rotation allowed
+      const rotateFlag = !!p.rotate;
+      const rotateAllowedFlag = !!p.rotate;
+      
+      const piece = { 
+        id: instanceId,   // unique per instance
         origId: p.id,          // original id for back-mapping
         w: p.w, 
         h: p.h, 
-        // Guarantee rotate is boolean and blocked when grainDirection is present:
-        rotate: !!p.rotate && !p.grainDirection,
-        rotateAllowed: !!p.rotate && !p.grainDirection,
+        rotate: rotateFlag,
+        rotateAllowed: rotateAllowedFlag,
         gaddi: !!p.gaddi,
         grainDirection: p.grainDirection ?? null, // preserve string/null
         laminateCode: p.laminateCode || '',
         nomW: (p as any).nomW || p.w,
         nomH: (p as any).nomH || p.h
-      }); 
+      };
+      
+      expanded.push(piece);
+      
+      // 📋 Log each expanded instance with constraint status
+      expandLog.push({
+        instanceId,
+        origId: p.id,
+        dimensions: `${piece.w}×${piece.h}mm`,
+        rotate: piece.rotate ? '✅ ALLOWED' : '🔒 BLOCKED',
+        laminate: piece.laminateCode || 'N/A',
+        grainDirection: piece.grainDirection || 'null'
+      });
     }
   });
+  
+  // 📊 LOG ALL EXPANDED INSTANCES WITH UNIQUE IDs
+  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length})`);
+  console.log('🌾 WOOD GRAIN CONSTRAINTS APPLIED TO ALL INSTANCES:');
+  console.table(expandLog);
+  console.groupEnd();
 
   const base = expanded.slice().sort((a, b) => {
     const d = area(b) - area(a); 
