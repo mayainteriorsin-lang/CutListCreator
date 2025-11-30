@@ -81,38 +81,13 @@ class MaxRectsBin {
     for (let i = 0; i < this.free.length; i++) {
       const fr = this.free[i];
 
-      // Try non-rotated orientation first (always allowed to test)
+      // NO ROTATION - Try non-rotated orientation ONLY
       if (piece.w <= fr.w && piece.h <= fr.h) {
         const aWaste = fr.w * fr.h - piece.w * piece.h;
         const s1 = Math.min(fr.w - piece.w, fr.h - piece.h);
         const s2 = Math.max(fr.w - piece.w, fr.h - piece.h);
         const key = (strategy === "BAF") ? aWaste : (strategy === "BSSF" ? s1 : s2);
         const cand = { a: key, s1, s2, rot: false, rect: { x: fr.x, y: fr.y, w: piece.w, h: piece.h }, i };
-        if (s1 <= EPS && s2 <= EPS) { bestScore = cand; best = cand; idxBest = i; break; }
-        if (key < bestScore.a || (key === bestScore.a && (s1 < bestScore.s1 || (s1 === bestScore.s1 && s2 < bestScore.s2)))) {
-          bestScore = cand;
-          best = cand;
-          idxBest = i;
-        }
-      }
-
-      // 🔐 CHECK AXIS-LOCK CONSTRAINT - If axis is locked, rotation prevented
-      const allowRotate = Boolean(piece.rotateAllowed);
-      if (!allowRotate) {
-        // Axis is locked: rotation would break the constraint
-        const panelType = (piece as any).panelType || 'panel';
-        const axisLockReason = (piece as any).axisLockReason;
-        // 📐 Rotation blocked by axis lock - rotation would break the constraint
-        continue;  // ⛔ Skip rotation attempts
-      }
-
-      // Otherwise try rotated orientation if rotation allowed
-      if (allowRotate && piece.h <= fr.w && piece.w <= fr.h) {
-        const aWaste = fr.w * fr.h - piece.h * piece.w;
-        const s1 = Math.min(fr.w - piece.h, fr.h - piece.w);
-        const s2 = Math.max(fr.w - piece.h, fr.h - piece.w);
-        const key = (strategy === "BAF") ? aWaste : (strategy === "BSSF" ? s1 : s2);
-        const cand = { a: key, s1, s2, rot: true, rect: { x: fr.x, y: fr.y, w: piece.h, h: piece.w }, i };
         if (s1 <= EPS && s2 <= EPS) { bestScore = cand; best = cand; idxBest = i; break; }
         if (key < bestScore.a || (key === bestScore.a && (s1 < bestScore.s1 || (s1 === bestScore.s1 && s2 < bestScore.s2)))) {
           bestScore = cand;
@@ -131,8 +106,7 @@ class MaxRectsBin {
       y: best.rect.y + this.kerf / 2,
       w: best.rect.w - this.kerf,
       h: best.rect.h - this.kerf,
-      rotated: !!best.rot,
-      rotateAllowed: !!piece.rotate,  // 📐 Whether rotation was allowed by axis-lock
+      rotated: false,
       gaddi: !!piece.gaddi,
       laminateCode: piece.laminateCode || '',
       nomW: (piece as any).nomW || piece.w,
@@ -393,55 +367,36 @@ export function optimizeCutlist({
   parts.forEach(p => { 
     for (let i = 0; i < p.qty; i++) {
       const instanceId = `${p.id}::${i}`;
-      const rotateFlag = !!p.rotate;
       const panelType = (p as any).panelType || 'panel';
-      const axisLockReason = (p as any).axisLockReason;
-      const woodGrainsEnabled = !!((p as any).woodGrainsEnabled);
-      
-      // When wood grains enabled, rotate MUST be false
-      if (woodGrainsEnabled && rotateFlag) {
-        console.warn(`⚠️ BUG: ${panelType} has woodGrainsEnabled=true but rotate=true! Should be false!`);
-      }
       
       const piece = { 
         id: instanceId,
         origId: p.id,
         w: p.w, 
         h: p.h, 
-        rotate: rotateFlag,
-        rotateAllowed: rotateFlag,  // 📐 Axis-lock determines if rotation allowed
+        rotate: false,  // NO ROTATION - always false
+        rotateAllowed: false,  // NO ROTATION - always false
         gaddi: !!p.gaddi,
         laminateCode: p.laminateCode || '',
         nomW: (p as any).nomW || p.w,
         nomH: (p as any).nomH || p.h,
-        panelType: panelType,
-        axisLockReason: axisLockReason
+        panelType: panelType
       };
       
       expanded.push(piece);
-      
-      let axisConstraint = 'none';
-      if (woodGrainsEnabled && axisLockReason) {
-        axisConstraint = `📐 ${axisLockReason} locked`;
-      }
       
       expandLog.push({
         instanceId,
         panelType,
         dimensions: `${piece.w}×${piece.h}mm`,
-        woodGrains: woodGrainsEnabled ? '🌾 YES' : '❌ NO',
-        rotate: piece.rotate ? '✅ ALLOWED' : '🔒 FALSE',
-        axisConstraint: axisConstraint
+        rotation: '🔒 DISABLED'
       });
     }
   });
   
-  // 📊 LOG ALL EXPANDED INSTANCES WITH AXIS-LOCK RULES
-  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length}) — AXIS CONSTRAINTS`);
-  console.log('🔐 AXIS-LOCK RULES (nomW=X-axis, nomH=Y-axis):');
-  console.log('   • LEFT/RIGHT: depth(X) × height(Y) LOCKED → rotation prevented');
-  console.log('   • TOP/BOTTOM: depth(X) × width(Y) LOCKED → rotation prevented');
-  console.log('   • BACK: width(X) × height(Y) LOCKED → rotation prevented');
+  // 📊 LOG ALL EXPANDED INSTANCES - ROTATION DISABLED
+  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length}) — ROTATION DISABLED`);
+  console.log('🔒 ROTATION DISABLED - All pieces placed in original orientation only');
   console.table(expandLog);
   console.groupEnd();
 
