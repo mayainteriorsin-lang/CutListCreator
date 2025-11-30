@@ -1,7 +1,6 @@
 /**
- * STANDARD DIMENSIONAL MAPPING
- * This module contains ONLY non-wood grain (standard) logic
- * Never mix with wood grain code
+ * Dimensional mapping for panel optimization
+ * Handles axis-lock constraints based on wood grain preferences
  */
 
 import type { Panel, OptimizerPart } from '../cutlist/core/types';
@@ -37,12 +36,12 @@ function sortParts(parts: OptimizerPart[]): void {
 }
 
 /**
- * Prepare parts with STANDARD dimensional mapping
- * When laminate has wood grains enabled, prevent rotation
+ * Prepare parts with axis-lock dimensional mapping
+ * When laminate has wood grains enabled, axis is locked preventing rotation
  * 
  * @param panels - Array of panels from UI
  * @param woodGrainsPreferences - Map of laminate codes with wood grain status
- * @returns Array of parts ready for standard optimization
+ * @returns Array of parts ready for optimization with axis constraints
  */
 export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Record<string, boolean> = {}): OptimizerPart[] {
   const parts: OptimizerPart[] = [];
@@ -61,7 +60,7 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
     // Check if wood grains are enabled for this laminate
     const woodGrainsEnabled = woodGrainsPreferences[frontCode] === true;
     
-    // STANDARD MODE: Use nominal dimensions as-is (no wood grain swapping)
+    // Use nominal dimensions for placement
     const w = nomW;
     const h = nomH;
     

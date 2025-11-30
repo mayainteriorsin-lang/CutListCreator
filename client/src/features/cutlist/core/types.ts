@@ -1,6 +1,5 @@
 /**
- * Core types shared between wood grain and standard optimization
- * This module contains NO wood grain or standard-specific logic
+ * Core types for panel optimization and cutting layout
  */
 
 /**
@@ -17,8 +16,6 @@ export interface Panel {
   h?: number;
   laminateCode?: string;
   gaddi?: boolean;
-  grainDirection?: boolean;
-  grainFlag?: boolean;
   woodGrainsEnabled?: boolean;
   displayW?: number;
   displayH?: number;
@@ -26,22 +23,22 @@ export interface Panel {
 }
 
 /**
- * Part object prepared for optimizer
+ * Part object prepared for optimizer with axis-lock constraints
  */
 export interface OptimizerPart {
   id: string;
   name: string;
-  nomW: number;      // nominal width
-  nomH: number;      // nominal height
+  nomW: number;      // nominal width (X-axis)
+  nomH: number;      // nominal height (Y-axis)
   w: number;         // actual width for placement
   h: number;         // actual height for placement
   qty: number;       // quantity (always 1 after expansion)
   rotate: boolean;   // can optimizer rotate this part?
   gaddi: boolean;    // GADDI marking flag
   laminateCode: string;
-  grainFlag?: boolean;        // Master wood grains toggle state
-  grainDirection?: string | boolean | null;  // Wood grain direction ('LOCKED' prevents rotation)
   woodGrainsEnabled?: boolean; // Per-laminate wood grain setting
+  panelType?: string;         // Panel type (TOP, BOTTOM, LEFT, RIGHT, BACK)
+  axisLockReason?: string;    // Axis constraint when grains enabled
   originalPanel: Panel;       // Reference to original panel
 }
 
@@ -62,7 +59,7 @@ export interface Sheet {
 }
 
 /**
- * Placed part on a sheet
+ * Placed part on a sheet (cutting result)
  */
 export interface PlacedPart {
   id: string;
@@ -73,7 +70,6 @@ export interface PlacedPart {
   rotated: boolean;
   rotateAllowed: boolean;
   gaddi: boolean;
-  grainDirection: boolean;
   laminateCode: string;
   nomW: number;
   nomH: number;
