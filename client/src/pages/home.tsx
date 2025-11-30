@@ -2081,27 +2081,21 @@ export default function Home() {
     const brandResults: Array<{ brand: string; laminateCode: string; laminateDisplay: string; result: any; isBackPanel: boolean }> = [];
     
     Object.entries(panelsByBrand).forEach(([groupKey, group]) => {
-      try {
-        console.group('🔍 PREVIEW DIALOG - Preparing parts');
-        console.log('Group panels:', group.panels.length);
-        console.groupEnd();
-        
-        const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
-        console.log('✅ preparePartsForOptimizer returned:', rawParts.length, 'parts');
-        
-        const parts = rawParts
-          .filter((p: any) => Boolean(p))
-          .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
-        
-        console.log('✅ After filtering:', parts.length, 'parts');
-        console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
-        
-        // Use multi-pass optimization for maximum efficiency
-        const optimizedPanels = multiPassOptimize(parts, currentSheetWidth, currentSheetHeight);
-        console.log('✅ Optimization returned:', optimizedPanels.length, 'sheets');
-        
-        const result = { panels: optimizedPanels };
-        const laminateDisplay = getLaminateDisplay(group.laminateCode);
+      console.group('🔍 PREVIEW DIALOG - Preparing parts');
+      console.log('Group panels:', group.panels.length);
+      console.groupEnd();
+      
+      const rawParts = preparePartsForOptimizer(group.panels);
+      const parts = rawParts
+        .filter((p: any) => Boolean(p))
+        .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
+      
+      console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
+      
+      // Use multi-pass optimization for maximum efficiency
+      const optimizedPanels = multiPassOptimize(parts, currentSheetWidth, currentSheetHeight);
+      const result = { panels: optimizedPanels };
+      const laminateDisplay = getLaminateDisplay(group.laminateCode);
       
       // Assign stable sheet IDs
       if (result?.panels) {
@@ -2174,19 +2168,14 @@ export default function Home() {
         }
       }
       
-        const hasBackPanel = group.panels.some(p => p.name.includes('- Back Panel'));
-        brandResults.push({ 
-          brand: group.brand, 
-          laminateCode: group.laminateCode, 
-          laminateDisplay,
-          result, 
-          isBackPanel: hasBackPanel
-        });
-        console.log('✅ Added to brandResults, total now:', brandResults.length);
-      } catch (error) {
-        console.error('❌ ERROR in preview optimization for group:', groupKey, error);
-        console.error('Error details:', error instanceof Error ? error.message : String(error));
-      }
+      const hasBackPanel = group.panels.some(p => p.name.includes('- Back Panel'));
+      brandResults.push({ 
+        brand: group.brand, 
+        laminateCode: group.laminateCode, 
+        laminateDisplay,
+        result, 
+        isBackPanel: hasBackPanel
+      });
     });
     
     // Process manual panels
@@ -2212,13 +2201,13 @@ export default function Home() {
       const targetSheet = targetBrandResult.result.panels[targetSheetIndex];
       const existingPanels = targetSheet.placed.map((p: any) => ({
         id: p.id, w: p.w, h: p.h, nomW: p.nomW ?? p.w, nomH: p.nomH ?? p.h,
-        qty: 1, rotate: p.rotateAllowed, gaddi: p.gaddi === true,
+        qty: 1, rotate: p.grainDirection ? false : true, gaddi: p.gaddi === true,
         grainDirection: p.grainDirection === true, laminateCode: p.laminateCode || ''
       }));
       
       const manualParts = Array(mp.quantity).fill(null).map(() => ({
         id: `${mp.name} (Manual)`, w: mp.width, h: mp.height, nomW: mp.width, nomH: mp.height,
-        qty: 1, rotate: !mp.grainDirection, gaddi: mp.gaddi === true,
+        qty: 1, rotate: mp.grainDirection ? false : true, gaddi: mp.gaddi === true,
         grainDirection: mp.grainDirection === true, laminateCode: mp.laminateCode || ''
       }));
       
@@ -2232,7 +2221,6 @@ export default function Home() {
       }
     });
     
-    console.log('✅ FINAL previewBrandResults:', brandResults.length, 'groups with sheets');
     return brandResults;
   }, [showPreviewDialog, cabinets, woodGrainsPreferences, sheetWidth, sheetHeight, kerf, manualPanels, deletedPreviewSheets]);
 
@@ -7377,7 +7365,7 @@ export default function Home() {
                     nomW: mp.width,
                     nomH: mp.height,
                     qty: 1,
-                    rotate: !mp.grainDirection,
+                    rotate: mp.grainDirection ? false : true,
                     gaddi: mp.gaddi === true,
                     grainDirection: mp.grainDirection === true,
                     laminateCode: mp.laminateCode || ''
@@ -7427,7 +7415,7 @@ export default function Home() {
                 nomW: colourFrameForm.width,
                 nomH: colourFrameForm.height,
                 qty: 1,
-                rotate: !colourFrameForm.grainDirection,
+                rotate: colourFrameForm.grainDirection ? false : true,
                 gaddi: false,
                 grainDirection: colourFrameForm.grainDirection,
                 laminateCode: colourFrameForm.laminateCode || ''
@@ -7456,7 +7444,7 @@ export default function Home() {
                       nomW: p.nomW,
                       nomH: p.nomH,
                       qty: 1,
-                      rotate: p.rotateAllowed,
+                      rotate: p.rotated ? false : p.rotateAllowed,
                       gaddi: p.gaddi,
                       grainDirection: p.grainDirection,
                       laminateCode: p.laminateCode
