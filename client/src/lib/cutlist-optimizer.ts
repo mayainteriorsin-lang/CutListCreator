@@ -98,22 +98,14 @@ class MaxRectsBin {
         }
       }
 
-      // 🔒 CHECK PANEL-TYPE-SPECIFIC ROTATION CONSTRAINT
+      // 🔐 CHECK AXIS-LOCK CONSTRAINT - If axis is locked, rotation prevented
       const allowRotate = Boolean(piece.rotateAllowed);
       if (!allowRotate) {
-        // 🆕 Rotation disabled based on NEW panel-type-specific rule
+        // Axis is locked: rotation would break the constraint
         const panelType = (piece as any).panelType || 'panel';
-        let reason = 'constraint active';
-        if (panelType === 'LEFT' || panelType === 'RIGHT') {
-          reason = 'height(Y)×depth(X) locked';
-        } else if (panelType === 'TOP' || panelType === 'BOTTOM') {
-          reason = 'width(Y)×depth(X) locked';
-        } else if (panelType === 'BACK') {
-          reason = 'BACK locked';
-        }
-        // Don't log for every piece - too noisy
-        // console.log(`🔒 NO ROTATION for ${piece.id}: ${reason}`);
-        continue;  // ⛔ Skip rotation attempts
+        const axisLockReason = (piece as any).axisLockReason;
+        // Rotation prevention enforced by axis lock rule
+        continue;  // ⛔ Skip rotation attempts - axis lock prevents rotation
       }
 
       // Otherwise try rotated orientation if rotation allowed
@@ -410,10 +402,11 @@ export function optimizeCutlist({
       // 🆔 UNIQUE INSTANCE ID: Type_Count_OriginalID_Instance
       const instanceId = `${p.id}::${i}`;
       
-      // 🆕 PANEL-TYPE-SPECIFIC WOOD GRAIN CONSTRAINT
+      // 🆕 AXIS-LOCK WOOD GRAIN CONSTRAINT
       const rotateFlag = !!p.rotate;
       const rotateAllowedFlag = !!p.rotate;
       const panelType = (p as any).panelType || 'panel';
+      const axisLockReason = (p as any).axisLockReason;
       
       const piece = { 
         id: instanceId,   // unique per instance
@@ -423,43 +416,38 @@ export function optimizeCutlist({
         rotate: rotateFlag,
         rotateAllowed: rotateAllowedFlag,
         gaddi: !!p.gaddi,
-        grainDirection: p.grainDirection ?? null, // preserve string/null
+        grainDirection: p.grainDirection ?? null,
         laminateCode: p.laminateCode || '',
         nomW: (p as any).nomW || p.w,
         nomH: (p as any).nomH || p.h,
-        panelType: panelType  // 🆕 Track panel type through optimizer
+        panelType: panelType,
+        axisLockReason: axisLockReason
       };
       
       expanded.push(piece);
       
-      // 📋 Log each expanded instance with NEW constraint status
-      let constraintRule = 'standard';
-      if ((p as any).woodGrainsEnabled) {
-        if (panelType === 'LEFT' || panelType === 'RIGHT') {
-          constraintRule = '📐 height(Y)×depth(X)→🔒LOCK';
-        } else if (panelType === 'TOP' || panelType === 'BOTTOM') {
-          constraintRule = '📐 width(Y)×depth(X)→🔒LOCK';
-        } else if (panelType === 'BACK') {
-          constraintRule = '📐 BACK→🔒LOCK';
-        }
+      // 📋 Log each expanded instance with axis-lock status
+      let axisConstraint = 'none';
+      if ((p as any).woodGrainsEnabled && axisLockReason) {
+        axisConstraint = `📐 ${axisLockReason} locked`;
       }
       
       expandLog.push({
         instanceId,
         panelType,
         dimensions: `${piece.w}×${piece.h}mm`,
-        rotate: piece.rotate ? '✅ ALLOWED' : '🔒 BLOCKED',
-        constraint: constraintRule
+        rotate: piece.rotate ? '✅ ALLOWED' : '🔐 AXIS LOCKED',
+        axisConstraint: axisConstraint
       });
     }
   });
   
-  // 📊 LOG ALL EXPANDED INSTANCES WITH NEW PANEL-TYPE-SPECIFIC RULES
-  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length}) — NEW RULES`);
-  console.log('🆕 NEW PANEL-TYPE-SPECIFIC WOOD GRAIN CONSTRAINTS:');
-  console.log('   • LEFT/RIGHT: height(Y) × depth(X) → 🔒 NO ROTATION if grains enabled');
-  console.log('   • TOP/BOTTOM: width(Y) × depth(X) → 🔒 NO ROTATION if grains enabled');
-  console.log('   • BACK: → 🔒 NO ROTATION if grains enabled');
+  // 📊 LOG ALL EXPANDED INSTANCES WITH AXIS-LOCK RULES
+  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length}) — AXIS CONSTRAINTS`);
+  console.log('🆕 AXIS-LOCK RULES (When wood grains enabled):');
+  console.log('   • LEFT/RIGHT: height(Y) × depth(X) LOCKED → rotation prevented');
+  console.log('   • TOP/BOTTOM: width(Y) × depth(X) LOCKED → rotation prevented');
+  console.log('   • BACK: height(Y) × depth(X) LOCKED → rotation prevented');
   console.table(expandLog);
   console.groupEnd();
 
