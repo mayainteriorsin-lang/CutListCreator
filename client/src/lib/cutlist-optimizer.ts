@@ -98,13 +98,22 @@ class MaxRectsBin {
         }
       }
 
-      // 🔒 CHECK ROTATION CONSTRAINT - Direct check on rotateAllowed flag
+      // 🔒 CHECK PANEL-TYPE-SPECIFIC ROTATION CONSTRAINT
       const allowRotate = Boolean(piece.rotateAllowed);
       if (!allowRotate) {
-        // 🆔 Rotation disabled for this specific unique instance
+        // 🆕 Rotation disabled based on NEW panel-type-specific rule
+        const panelType = (piece as any).panelType || 'panel';
+        let reason = 'constraint active';
+        if (panelType === 'LEFT' || panelType === 'RIGHT') {
+          reason = 'height(Y)×depth(X) locked';
+        } else if (panelType === 'TOP' || panelType === 'BOTTOM') {
+          reason = 'width(Y)×depth(X) locked';
+        } else if (panelType === 'BACK') {
+          reason = 'BACK locked';
+        }
         // Don't log for every piece - too noisy
-        // console.log(`🔒 NO ROTATION for ${piece.id} (${piece.w}×${piece.h}mm)`);
-        continue;  // Skip rotation attempts
+        // console.log(`🔒 NO ROTATION for ${piece.id}: ${reason}`);
+        continue;  // ⛔ Skip rotation attempts
       }
 
       // Otherwise try rotated orientation if rotation allowed
@@ -401,9 +410,10 @@ export function optimizeCutlist({
       // 🆔 UNIQUE INSTANCE ID: Type_Count_OriginalID_Instance
       const instanceId = `${p.id}::${i}`;
       
-      // 🔒 WOOD GRAIN CONSTRAINT: If rotate flag is false, NO rotation allowed
+      // 🆕 PANEL-TYPE-SPECIFIC WOOD GRAIN CONSTRAINT
       const rotateFlag = !!p.rotate;
       const rotateAllowedFlag = !!p.rotate;
+      const panelType = (p as any).panelType || 'panel';
       
       const piece = { 
         id: instanceId,   // unique per instance
@@ -416,26 +426,40 @@ export function optimizeCutlist({
         grainDirection: p.grainDirection ?? null, // preserve string/null
         laminateCode: p.laminateCode || '',
         nomW: (p as any).nomW || p.w,
-        nomH: (p as any).nomH || p.h
+        nomH: (p as any).nomH || p.h,
+        panelType: panelType  // 🆕 Track panel type through optimizer
       };
       
       expanded.push(piece);
       
-      // 📋 Log each expanded instance with constraint status
+      // 📋 Log each expanded instance with NEW constraint status
+      let constraintRule = 'standard';
+      if ((p as any).woodGrainsEnabled) {
+        if (panelType === 'LEFT' || panelType === 'RIGHT') {
+          constraintRule = '📐 height(Y)×depth(X)→🔒LOCK';
+        } else if (panelType === 'TOP' || panelType === 'BOTTOM') {
+          constraintRule = '📐 width(Y)×depth(X)→🔒LOCK';
+        } else if (panelType === 'BACK') {
+          constraintRule = '📐 BACK→🔒LOCK';
+        }
+      }
+      
       expandLog.push({
         instanceId,
-        origId: p.id,
+        panelType,
         dimensions: `${piece.w}×${piece.h}mm`,
         rotate: piece.rotate ? '✅ ALLOWED' : '🔒 BLOCKED',
-        laminate: piece.laminateCode || 'N/A',
-        grainDirection: piece.grainDirection || 'null'
+        constraint: constraintRule
       });
     }
   });
   
-  // 📊 LOG ALL EXPANDED INSTANCES WITH UNIQUE IDs
-  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length})`);
-  console.log('🌾 WOOD GRAIN CONSTRAINTS APPLIED TO ALL INSTANCES:');
+  // 📊 LOG ALL EXPANDED INSTANCES WITH NEW PANEL-TYPE-SPECIFIC RULES
+  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length}) — NEW RULES`);
+  console.log('🆕 NEW PANEL-TYPE-SPECIFIC WOOD GRAIN CONSTRAINTS:');
+  console.log('   • LEFT/RIGHT: height(Y) × depth(X) → 🔒 NO ROTATION if grains enabled');
+  console.log('   • TOP/BOTTOM: width(Y) × depth(X) → 🔒 NO ROTATION if grains enabled');
+  console.log('   • BACK: → 🔒 NO ROTATION if grains enabled');
   console.table(expandLog);
   console.groupEnd();
 

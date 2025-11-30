@@ -90,6 +90,25 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
     // Example: TOP_1_panel-123, BOTTOM_2_panel-456, LEFT_1_panel-789
     const uniqueId = `${panelType}_${typeCounters[panelType]}_${p.id ?? `idx${idx}`}`;
     
+    // 🆕 NEW PANEL-TYPE-SPECIFIC ROTATION RULE
+    // LEFT/RIGHT: Lock to height (Y) × depth (X) - NO ROTATION if wood grains enabled
+    // TOP/BOTTOM: Lock to width (Y) × depth (X) - NO ROTATION if wood grains enabled
+    let rotateAllowed = !woodGrainsEnabled;  // Default: allow rotation if no wood grains
+    
+    if (woodGrainsEnabled) {
+      // When wood grains are enabled, apply panel-type-specific rules
+      if (panelType === 'LEFT' || panelType === 'RIGHT') {
+        // LEFT/RIGHT: Lock height (Y) × depth (X) → NO ROTATION
+        rotateAllowed = false;
+      } else if (panelType === 'TOP' || panelType === 'BOTTOM') {
+        // TOP/BOTTOM: Lock width (Y) × depth (X) → NO ROTATION
+        rotateAllowed = false;
+      } else if (panelType === 'BACK') {
+        // BACK: Also lock → NO ROTATION
+        rotateAllowed = false;
+      }
+    }
+    
     const part: OptimizerPart = {
       id: uniqueId,  // 🆔 UNIQUE ID for each panel type
       name,
@@ -98,12 +117,13 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
       w,
       h,
       qty: 1,
-      rotate: !woodGrainsEnabled,  // 🔒 DIRECT CONSTRAINT: NO ROTATION if wood grains enabled
+      rotate: rotateAllowed,  // 🔒 PANEL-TYPE-SPECIFIC CONSTRAINT
       gaddi: p.gaddi === true,
       laminateCode,
       grainFlag: false,
       grainDirection: null,  // No grain direction needed - using rotate flag directly
       woodGrainsEnabled: woodGrainsEnabled,  // Store for reference
+      panelType: panelType,  // 🆕 Store panel type for optimizer
       originalPanel: p
     };
     
@@ -114,17 +134,22 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
   sortParts(parts);
   
   // Debug logging
-  console.groupCollapsed('📦 PANEL UNIQUE IDs — Wood Grain Constraint Status');
+  console.groupCollapsed('📦 PANEL UNIQUE IDs — NEW PANEL-TYPE-SPECIFIC RULES');
   console.log(`Total Panels: ${parts.length}`);
   console.log(`Type Counters:`, typeCounters);
+  console.log('🆕 NEW RULE: When wood grains enabled:');
+  console.log('   • LEFT/RIGHT: height(Y) × depth(X) → 🔒 NO ROTATION');
+  console.log('   • TOP/BOTTOM: width(Y) × depth(X) → 🔒 NO ROTATION');
+  console.log('   • BACK: → 🔒 NO ROTATION');
   console.table(
     parts.map(pr => ({
       uniqueId: pr.id,
-      panelName: pr.name,
+      type: (pr as any).panelType || 'unknown',
       dimensions: `${pr.nomW}×${pr.nomH}mm`,
       rotate: pr.rotate ? '✅ ALLOWED' : '🔒 BLOCKED',
       laminate: pr.laminateCode,
       woodGrain: pr.woodGrainsEnabled ? '🌾 YES' : '❌ NO',
+      rule: pr.woodGrainsEnabled ? '📐 Type-specific' : 'standard',
     }))
   );
   console.groupEnd();
