@@ -1,157 +1,133 @@
 /**
- * Dimensional mapping for panel optimization
- * Handles axis-lock constraints based on wood grain preferences
+ * SIMPLE PANEL AXIS MAPPING
+ * 
+ * Sheet: X=1210mm (horizontal), Y=2420mm (vertical)
+ * 
+ * TOP/BOTTOM (with grain):
+ *   - Width (564mm) → Y-axis
+ *   - Depth (450mm) → X-axis
+ * 
+ * LEFT/RIGHT (with grain):
+ *   - Depth (450mm) → X-axis (horizontal)
+ *   - Height (800mm) → Y-axis (vertical)
+ * 
+ * All panels: rotate = false (no rotation)
  */
 
 import type { Panel, OptimizerPart } from '../cutlist/core/types';
 
+// Panel type counters for unique ID generation
+const panelCounters: Record<string, number> = {
+  TOP: 0,
+  BOTTOM: 0,
+  LEFT: 0,
+  RIGHT: 0,
+  BACK: 0
+};
+
 /**
- * Get panel type order for sorting
+ * Detect panel type from name
  */
-function getPanelTypeOrder(name: string): number {
-  const n = name.toLowerCase();
-  if (/(^|\W)back(\W|$)/.test(n)) return 1;      // BACK panels first (usually smaller)
-  if (/(^|\W)left(\W|$)/.test(n)) return 2;      // LEFT panels
-  if (/(^|\W)right(\W|$)/.test(n)) return 3;     // RIGHT panels
-  if (/(^|\W)top(\W|$)/.test(n)) return 4;       // TOP panels
-  if (/(^|\W)bottom(\W|$)/.test(n)) return 5;    // BOTTOM panels
-  return 6;                                       // Other panels last
+function getPanelType(name: string): string {
+  const lower = name.toLowerCase();
+  if (lower.includes('top')) return 'TOP';
+  if (lower.includes('bottom')) return 'BOTTOM';
+  if (lower.includes('left')) return 'LEFT';
+  if (lower.includes('right')) return 'RIGHT';
+  if (lower.includes('back')) return 'BACK';
+  return 'PANEL';
 }
 
 /**
- * Sort parts for cleaner, more organized layouts
+ * Map panel dimensions to X/Y axes based on panel type and grain
+ * Returns { x, y } dimensions where x=horizontal(1210), y=vertical(2420)
  */
-function sortParts(parts: OptimizerPart[]): void {
-  parts.sort((a, b) => {
-    // First sort by panel type (grouping similar panels)
-    const typeOrderA = getPanelTypeOrder(a.name);
-    const typeOrderB = getPanelTypeOrder(b.name);
-    if (typeOrderA !== typeOrderB) return typeOrderA - typeOrderB;
-    
-    // Within same type, sort by area (larger first for better packing)
-    const areaA = a.w * a.h;
-    const areaB = b.w * b.h;
-    return areaB - areaA;
-  });
+function mapAxes(panelType: string, width: number, depth: number, height: number): { x: number; y: number } {
+  // TOP/BOTTOM: Width→Y, Depth→X
+  if (panelType === 'TOP' || panelType === 'BOTTOM') {
+    return { x: depth, y: width };  // Depth on X-axis, Width on Y-axis
+  }
+  
+  // LEFT/RIGHT: Depth→X, Height→Y
+  if (panelType === 'LEFT' || panelType === 'RIGHT') {
+    return { x: depth, y: height };  // Depth on X-axis, Height on Y-axis
+  }
+  
+  // BACK: treat as width→X, height→Y
+  if (panelType === 'BACK') {
+    return { x: width, y: height };
+  }
+  
+  // Default fallback
+  return { x: width, y: height };
 }
 
 /**
- * Prepare parts with axis-lock dimensional mapping
- * When laminate has wood grains enabled, axis is locked preventing rotation
+ * Prepare panels for optimizer - SIMPLE VERSION
  * 
- * @param panels - Array of panels from UI
- * @param woodGrainsPreferences - Map of laminate codes with wood grain status
- * @returns Array of parts ready for optimization with axis constraints
+ * Rules:
+ * - Each panel gets unique ID: PANELTYPE_counter_originalId
+ * - Dimensions mapped to X/Y axes per panel type
+ * - Rotation ALWAYS false
+ * - No grain logic - just straight axis mapping
  */
 export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Record<string, boolean> = {}): OptimizerPart[] {
   const parts: OptimizerPart[] = [];
   
-  // Track panel type counts for unique ID generation
-  const typeCounters: Record<string, number> = {};
-  
-  panels.forEach((p, idx) => {
-    // Extract basic properties
-    const name = String(p.name ?? p.id ?? `panel-${idx}`);
-    const nomW = Number(p.nomW ?? p.width ?? p.w ?? 0);
-    const nomH = Number(p.nomH ?? p.height ?? p.h ?? 0);
-    const laminateCode = String(p.laminateCode ?? '').trim();
+  panels.forEach((panel, idx) => {
+    const name = String(panel.name ?? panel.id ?? `panel-${idx}`);
+    const width = Number(panel.width ?? panel.nomW ?? panel.w ?? 564);
+    const depth = Number(panel.depth ?? 450);
+    const height = Number(panel.height ?? panel.nomH ?? panel.h ?? 800);
+    
+    // Get panel type
+    const panelType = getPanelType(name);
+    
+    // Generate unique ID
+    panelCounters[panelType] = (panelCounters[panelType] ?? 0) + 1;
+    const uniqueId = `${panelType}_${panelCounters[panelType]}_${panel.id ?? idx}`;
+    
+    // Map to X/Y axes
+    const { x, y } = mapAxes(panelType, width, depth, height);
+    
+    // Extract laminate code
+    const laminateCode = String(panel.laminateCode ?? '').trim();
     const frontCode = laminateCode.split('+')[0].trim();
     
-    // Check if wood grains are enabled for this laminate
+    // Check if wood grains enabled (for reference, but doesn't affect rotation now)
     const woodGrainsEnabled = woodGrainsPreferences[frontCode] === true;
     
-    // Use nominal dimensions for placement
-    const w = nomW;
-    const h = nomH;
-    
-    // Mutate original panel with display dimensions
-    p.displayW = w;
-    p.displayH = h;
-    p.nomW = nomW;
-    p.nomH = nomH;
-    p.woodGrainsEnabled = woodGrainsEnabled;
-    
-    // 🆔 CREATE UNIQUE PANEL ID based on panel type
-    // This ensures each panel (top, bottom, left, right, back) has its own unique identifier
-    const nameLower = name.toLowerCase();
-    let panelType = 'panel';
-    if (/\btop\b/.test(nameLower)) panelType = 'TOP';
-    else if (/\bbottom\b/.test(nameLower)) panelType = 'BOTTOM';
-    else if (/\bleft\b/.test(nameLower)) panelType = 'LEFT';
-    else if (/\bright\b/.test(nameLower)) panelType = 'RIGHT';
-    else if (/\bback\b/.test(nameLower)) panelType = 'BACK';
-    
-    // Increment counter for this panel type
-    typeCounters[panelType] = (typeCounters[panelType] ?? 0) + 1;
-    
-    // Create unique ID: PANELTYPE_counter_originalId
-    // Example: TOP_1_panel-123, BOTTOM_2_panel-456, LEFT_1_panel-789
-    const uniqueId = `${panelType}_${typeCounters[panelType]}_${p.id ?? `idx${idx}`}`;
-    
-    // 🆕 AXIS-LOCK RULE (nomW=X-axis, nomH=Y-axis)
-    // When wood grains enabled: axis is locked, preventing rotation
-    // LEFT/RIGHT: nomW=depth(X), nomH=height(Y) → depth(X)×height(Y) locked
-    // TOP/BOTTOM: nomW=depth(X), nomH=width(Y) → depth(X)×width(Y) locked
-    // BACK: nomW=width(X), nomH=height(Y) → width(X)×height(Y) locked
-    
-    let rotateAllowed = true;  // Default: allow rotation
-    let axisLockReason = null;
-    
-    if (woodGrainsEnabled) {
-      // When wood grains enabled: axis is locked, so rotation would break the rule
-      // We set rotate=false because the AXIS constraint prevents rotation
-      rotateAllowed = false;
-      
-      if (panelType === 'LEFT' || panelType === 'RIGHT') {
-        axisLockReason = 'depth(X)×height(Y)';  // Depth on X, Height on Y locked
-      } else if (panelType === 'TOP' || panelType === 'BOTTOM') {
-        axisLockReason = 'depth(X)×width(Y)';   // Depth on X, Width on Y locked
-      } else if (panelType === 'BACK') {
-        axisLockReason = 'width(X)×height(Y)';  // Width on X, Height on Y locked
-      }
-    }
-    
-    const part: any = {
-      id: uniqueId,  // 🆔 UNIQUE ID for each panel type
+    // Create part for optimizer
+    const part: OptimizerPart = {
+      id: uniqueId,
       name,
-      nomW,
-      nomH,
-      w,
-      h,
+      w: x,  // X-axis (horizontal)
+      h: y,  // Y-axis (vertical)
+      nomW: x,
+      nomH: y,
       qty: 1,
-      rotate: rotateAllowed,  // Axis rule determines if rotation possible
-      gaddi: p.gaddi === true,
+      rotate: false,  // NO ROTATION - ALWAYS FALSE
+      gaddi: panel.gaddi === true,
       laminateCode,
-      woodGrainsEnabled: woodGrainsEnabled,
-      panelType: panelType,  // 📐 Panel type for axis-lock
-      axisLockReason: axisLockReason,  // 📐 Specific axis constraint (e.g., "height(Y)×depth(X)")
-      originalPanel: p
+      panelType,
+      woodGrainsEnabled,
+      originalPanel: panel
     };
     
     parts.push(part);
   });
   
-  // Sort panels for better organization
-  sortParts(parts);
-  
-  // Debug logging with wood grain status
-  console.groupCollapsed('📦 PANEL UNIQUE IDs — AXIS-LOCK RULES');
-  console.log(`Total Panels: ${parts.length}`);
-  console.log(`Type Counters:`, typeCounters);
-  console.log('🔐 AXIS-LOCK CONSTRAINTS (nomW=X-axis, nomH=Y-axis):');
-  console.log('   • LEFT/RIGHT: depth(X) × height(Y) locked → 🔒 NO ROTATION');
-  console.log('   • TOP/BOTTOM: depth(X) × width(Y) locked → 🔒 NO ROTATION');
-  console.log('   • BACK: width(X) × height(Y) locked → 🔒 NO ROTATION');
-  console.log('Wood Grains Preferences Map:', woodGrainsPreferences);
+  // Log what we prepared
+  console.group('📦 PANEL AXIS MAPPING - SIMPLE');
+  console.log(`Sheet: X=1210mm (horizontal), Y=2420mm (vertical)`);
+  console.log(`Total panels: ${parts.length}`);
   console.table(
-    parts.map((pr: any) => ({
-      uniqueId: pr.id,
-      type: pr.panelType || 'unknown',
-      dimensions: `${pr.nomW}×${pr.nomH}mm`,
-      laminateCode: pr.laminateCode,
-      woodGrainsEnabled: pr.woodGrainsEnabled ? '🌾 YES' : '❌ NO',
-      rotate: pr.rotate ? '✅ ALLOWED' : '🔒 FALSE',
-      axisLock: pr.axisLockReason || 'none',
+    parts.map(p => ({
+      id: p.id,
+      type: p.panelType,
+      'X-axis': `${p.w}mm`,
+      'Y-axis': `${p.h}mm`,
+      rotate: '🔒 FALSE'
     }))
   );
   console.groupEnd();
