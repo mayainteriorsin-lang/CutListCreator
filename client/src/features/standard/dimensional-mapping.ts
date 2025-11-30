@@ -134,7 +134,7 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
   // Sort panels for better organization
   sortParts(parts);
   
-  // Debug logging
+  // Debug logging with wood grain status
   console.groupCollapsed('📦 PANEL UNIQUE IDs — AXIS-LOCK RULES');
   console.log(`Total Panels: ${parts.length}`);
   console.log(`Type Counters:`, typeCounters);
@@ -142,15 +142,16 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
   console.log('   • LEFT/RIGHT: depth(X) × height(Y) locked → 🔒 NO ROTATION');
   console.log('   • TOP/BOTTOM: depth(X) × width(Y) locked → 🔒 NO ROTATION');
   console.log('   • BACK: width(X) × height(Y) locked → 🔒 NO ROTATION');
+  console.log('Wood Grains Preferences Map:', woodGrainsPreferences);
   console.table(
     parts.map((pr: any) => ({
       uniqueId: pr.id,
       type: pr.panelType || 'unknown',
       dimensions: `${pr.nomW}×${pr.nomH}mm`,
-      rotate: pr.rotate ? '✅ ALLOWED' : '📐 AXIS LOCKED',
-      laminate: pr.laminateCode,
+      laminateCode: pr.laminateCode,
+      woodGrainsEnabled: pr.woodGrainsEnabled ? '🌾 YES' : '❌ NO',
+      rotate: pr.rotate ? '✅ ALLOWED' : '🔒 FALSE',
       axisLock: pr.axisLockReason || 'none',
-      woodGrain: pr.woodGrainsEnabled ? '🌾 YES' : '❌ NO',
     }))
   );
   console.groupEnd();

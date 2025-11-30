@@ -102,8 +102,8 @@ class MaxRectsBin {
         // Axis is locked: rotation would break the constraint
         const panelType = (piece as any).panelType || 'panel';
         const axisLockReason = (piece as any).axisLockReason;
-        // Rotation prevention enforced by axis lock rule
-        continue;  // ⛔ Skip rotation attempts - axis lock prevents rotation
+        // 📐 Rotation blocked by axis lock - rotation would break the constraint
+        continue;  // ⛔ Skip rotation attempts
       }
 
       // Otherwise try rotated orientation if rotation allowed
@@ -396,6 +396,12 @@ export function optimizeCutlist({
       const rotateFlag = !!p.rotate;
       const panelType = (p as any).panelType || 'panel';
       const axisLockReason = (p as any).axisLockReason;
+      const woodGrainsEnabled = !!((p as any).woodGrainsEnabled);
+      
+      // When wood grains enabled, rotate MUST be false
+      if (woodGrainsEnabled && rotateFlag) {
+        console.warn(`⚠️ BUG: ${panelType} has woodGrainsEnabled=true but rotate=true! Should be false!`);
+      }
       
       const piece = { 
         id: instanceId,
@@ -415,7 +421,7 @@ export function optimizeCutlist({
       expanded.push(piece);
       
       let axisConstraint = 'none';
-      if ((p as any).woodGrainsEnabled && axisLockReason) {
+      if (woodGrainsEnabled && axisLockReason) {
         axisConstraint = `📐 ${axisLockReason} locked`;
       }
       
@@ -423,7 +429,8 @@ export function optimizeCutlist({
         instanceId,
         panelType,
         dimensions: `${piece.w}×${piece.h}mm`,
-        rotate: piece.rotate ? '✅ ALLOWED' : '🔐 AXIS LOCKED',
+        woodGrains: woodGrainsEnabled ? '🌾 YES' : '❌ NO',
+        rotate: piece.rotate ? '✅ ALLOWED' : '🔒 FALSE',
         axisConstraint: axisConstraint
       });
     }
