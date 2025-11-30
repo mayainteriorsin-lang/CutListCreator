@@ -2103,7 +2103,8 @@ export default function Home() {
             if (found) {
               p.grainDirection = found.grainDirection ?? null;
               p.type = (found as any).name || p.name;
-              p.depth = (found as any).width ?? p.width ?? 450;
+              // Use actual panel values - NO hardcoded defaults
+              p.depth = (found as any).depth ?? (found as any).width;
             }
             computeDisplayDims(p);
           });
