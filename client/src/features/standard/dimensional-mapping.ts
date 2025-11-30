@@ -47,6 +47,9 @@ function sortParts(parts: OptimizerPart[]): void {
 export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Record<string, boolean> = {}): OptimizerPart[] {
   const parts: OptimizerPart[] = [];
   
+  // Track panel type counts for unique ID generation
+  const typeCounters: Record<string, number> = {};
+  
   panels.forEach((p, idx) => {
     // Extract basic properties
     const name = String(p.name ?? p.id ?? `panel-${idx}`);
@@ -70,10 +73,25 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
     p.grainFlag = false;
     p.woodGrainsEnabled = woodGrainsEnabled;
     
-    // Create optimizer part
-    const safeId = String(p.id ?? name ?? `part-${idx}`);
+    // 🆔 CREATE UNIQUE PANEL ID based on panel type
+    // This ensures each panel (top, bottom, left, right, back) has its own unique identifier
+    const nameLower = name.toLowerCase();
+    let panelType = 'panel';
+    if (/\btop\b/.test(nameLower)) panelType = 'TOP';
+    else if (/\bbottom\b/.test(nameLower)) panelType = 'BOTTOM';
+    else if (/\bleft\b/.test(nameLower)) panelType = 'LEFT';
+    else if (/\bright\b/.test(nameLower)) panelType = 'RIGHT';
+    else if (/\bback\b/.test(nameLower)) panelType = 'BACK';
+    
+    // Increment counter for this panel type
+    typeCounters[panelType] = (typeCounters[panelType] ?? 0) + 1;
+    
+    // Create unique ID: PANELTYPE_counter_originalId
+    // Example: TOP_1_panel-123, BOTTOM_2_panel-456, LEFT_1_panel-789
+    const uniqueId = `${panelType}_${typeCounters[panelType]}_${p.id ?? `idx${idx}`}`;
+    
     const part: OptimizerPart = {
-      id: safeId,
+      id: uniqueId,  // 🆔 UNIQUE ID for each panel type
       name,
       nomW,
       nomH,
@@ -96,20 +114,17 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
   sortParts(parts);
   
   // Debug logging
-  console.groupCollapsed('📦 prepareStandardParts — WOOD GRAIN TEST');
-  console.log(`Standard Mode: ON with Wood Grain Constraints`);
+  console.groupCollapsed('📦 PANEL UNIQUE IDs — Wood Grain Constraint Status');
+  console.log(`Total Panels: ${parts.length}`);
+  console.log(`Type Counters:`, typeCounters);
   console.table(
     parts.map(pr => ({
-      id: pr.id,
-      name: pr.name,
-      nomW: pr.nomW,
-      nomH: pr.nomH,
-      w: pr.w,
-      h: pr.h,
-      rotate: pr.rotate,
-      grainDirection: pr.grainDirection,
-      gaddi: pr.gaddi,
+      uniqueId: pr.id,
+      panelName: pr.name,
+      dimensions: `${pr.nomW}×${pr.nomH}mm`,
+      rotate: pr.rotate ? '✅ ALLOWED' : '🔒 BLOCKED',
       laminate: pr.laminateCode,
+      woodGrain: pr.woodGrainsEnabled ? '🌾 YES' : '❌ NO',
     }))
   );
   console.groupEnd();
