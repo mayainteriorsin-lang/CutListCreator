@@ -1625,18 +1625,14 @@ export default function Home() {
     return false;
   };
 
-  // Calculate panel dimensions
+  // Calculate panel dimensions - SIMPLE: Use input values directly, NO calculations
   const calculatePanelDimensions = (cabinet: Cabinet) => {
-    const effectiveWidth = cabinet.width - (cabinet.widthReduction || 36);
-    const backWidth = cabinet.width; // Use FULL cabinet width - NO reductions at all
-    const backHeight = cabinet.height; // Use FULL cabinet height - NO reductions at all
-
     return {
-      top: { width: effectiveWidth, height: cabinet.depth, thickness: 18 },
-      bottom: { width: effectiveWidth, height: cabinet.depth, thickness: 18 },
+      top: { width: cabinet.width, height: cabinet.depth, thickness: 18 },
+      bottom: { width: cabinet.width, height: cabinet.depth, thickness: 18 },
       left: { width: cabinet.depth, height: cabinet.height, thickness: 18 },
       right: { width: cabinet.depth, height: cabinet.height, thickness: 18 },
-      back: { width: backWidth, height: backHeight, thickness: 18 }
+      back: { width: cabinet.width, height: cabinet.height, thickness: 18 }
     };
   };
 
@@ -5147,7 +5143,7 @@ export default function Home() {
                     
                     {/* Panel Width Info */}
                     <div className="text-xs text-slate-500 mb-4">
-                      Panel width: {watchedValues.width ? (watchedValues.width - (watchedValues.widthReduction || 36)) : 0}mm
+                      Panel width: {watchedValues.width ?? 0}mm
                     </div>
 
                     <div className="space-y-6 mt-[50px]">
