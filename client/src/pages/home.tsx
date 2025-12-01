@@ -5087,9 +5087,9 @@ export default function Home() {
                       </div>
                     </div>
                     
-                    {/* Panel Width Info - DISPLAY: width - 36 */}
+                    {/* Panel Width Info - DISPLAY: width - reduction */}
                     <div className="text-xs text-slate-500 mb-4">
-                      Panel width: {((watchedValues.width ?? 0) - 36)}mm
+                      Panel width: {((watchedValues.width ?? 0) - (watchedValues.widthReduction ?? 36))}mm
                     </div>
 
                     <div className="space-y-6 mt-[50px]">
