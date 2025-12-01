@@ -669,6 +669,7 @@ export default function Home() {
   // FIX: Use individual field watches to prevent infinite loop from watchedValues object reference changing
   // IMPORTANT: Define watches BEFORE using them in useEffects
   const topPanelLaminateCode = form.watch('topPanelLaminateCode');
+  const topPanelInnerLaminateCode = form.watch('topPanelInnerLaminateCode');
   const bottomPanelLaminateCode = form.watch('bottomPanelLaminateCode');
   const leftPanelLaminateCode = form.watch('leftPanelLaminateCode');
   const rightPanelLaminateCode = form.watch('rightPanelLaminateCode');
@@ -676,6 +677,16 @@ export default function Home() {
   const shutterLaminateCode = form.watch('shutterLaminateCode');
   const shutterPlywoodBrand = form.watch('shutterPlywoodBrand');
   const shutterInnerLaminateCode = form.watch('shutterInnerLaminateCode');
+  
+  // ✅ AUTO-SYNC: Shutter laminate inherits Top panel laminate (time-saver)
+  useEffect(() => {
+    if (topPanelLaminateCode && !shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', topPanelLaminateCode);
+    }
+    if (topPanelInnerLaminateCode && !shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', topPanelInnerLaminateCode);
+    }
+  }, [topPanelLaminateCode, topPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
   
   // ✅ AUTO-SYNC: Colour Frame inherits Quick Shutter materials for consolidation
   useEffect(() => {
@@ -5188,7 +5199,7 @@ export default function Home() {
                             <div className="space-y-2">
                               <Label className="text-xs text-slate-600">Front Laminate</Label>
                               <Select
-                                value={watchedValues.centerPostLaminateCode || watchedValues.topLaminateCode || ''}
+                                value={watchedValues.centerPostLaminateCode || watchedValues.topPanelLaminateCode || ''}
                                 onValueChange={(value) => form.setValue('centerPostLaminateCode', value)}
                               >
                                 <SelectTrigger className="h-8 text-sm">
@@ -5315,7 +5326,7 @@ export default function Home() {
                             <div className="space-y-2">
                               <Label className="text-xs text-slate-600">Front Laminate</Label>
                               <Select
-                                value={watchedValues.shelvesLaminateCode || watchedValues.topLaminateCode || ''}
+                                value={watchedValues.shelvesLaminateCode || watchedValues.topPanelLaminateCode || ''}
                                 onValueChange={(value) => form.setValue('shelvesLaminateCode', value)}
                               >
                                 <SelectTrigger className="h-8 text-sm">
