@@ -7697,25 +7697,29 @@ export default function Home() {
                                     {/* GADDI Dotted Line - Red marking for nomW (TOP/BOTTOM) or nomH (LEFT/RIGHT) */}
                                     {isGaddi && (() => {
                                       const type = panelName.toUpperCase();
-                                      const isLeftRight = type.includes('LEFT') || type.includes('RIGHT');
-                                      const isTopBottom = type.includes('TOP') || type.includes('BOTTOM');
+                                      const isLeft = type.includes('LEFT');
+                                      const isRight = type.includes('RIGHT');
+                                      const isTop = type.includes('TOP');
+                                      const isBottom = type.includes('BOTTOM');
+                                      const isTopBottom = isTop || isBottom;
                                       
-                                      if (!isLeftRight && !isTopBottom) return null;
+                                      if (!(isLeft || isRight || isTopBottom)) return null;
                                       
                                       return (
                                         <div 
                                           className="absolute"
                                           style={{ 
-                                            left: isTopBottom ? '2px' : '2px',
+                                            left: isTopBottom ? '2px' : (isLeft ? '2px' : 'auto'),
                                             top: isTopBottom ? '2px' : '2px',
-                                            right: isTopBottom ? '2px' : 'auto',
-                                            bottom: isTopBottom ? 'auto' : '2px',
-                                            width: isLeftRight ? '0px' : 'calc(100% - 4px)',
+                                            right: isRight ? '2px' : (isTopBottom ? '2px' : 'auto'),
+                                            bottom: isBottom ? '2px' : (isTopBottom ? 'auto' : '2px'),
+                                            width: isTopBottom ? 'calc(100% - 4px)' : '0px',
                                             height: isTopBottom ? '0px' : 'calc(100% - 4px)',
                                             borderTop: isTopBottom ? '2px dotted #FF0000' : 'none',
-                                            borderLeft: isLeftRight ? '2px dotted #FF0000' : 'none'
+                                            borderRight: isRight ? '2px dotted #FF0000' : 'none',
+                                            borderLeft: isLeft ? '2px dotted #FF0000' : 'none'
                                           }}
-                                          title={`GADDI: Mark ${isLeftRight ? 'Height (nomH)' : 'Width (nomW)'}`}
+                                          title={`GADDI: Mark ${isTopBottom ? 'Width (nomW)' : 'Height (nomH)'}`}
                                         />
                                       );
                                     })()}
