@@ -44,12 +44,10 @@ interface CabinetFormMemory {
   height?: number;
   width?: number;
   depth?: number;
-  plywoodType?: string;
-  backPanelPlywoodBrand?: string;
+  A?: string;
   topPanelLaminateCode?: string;
   backPanelLaminateCode?: string;
   widthReduction?: number;
-  A?: string;
   shutterLaminateCode?: string;
   shutterInnerLaminateCode?: string;
 }
@@ -420,7 +418,7 @@ export default function Home() {
     height: number;
     width: number;
     laminateCode: string;
-    plywoodType: string;
+    A: string;
     quantity: number;
     grainDirection: boolean;
     gaddi: boolean;
@@ -436,7 +434,7 @@ export default function Home() {
     height: number | string;
     width: number | string;
     laminateCode: string;
-    plywoodType: string;
+    A: string;
     quantity: number;
     grainDirection: boolean;
     gaddi: boolean;
@@ -445,13 +443,13 @@ export default function Home() {
     height: '',
     width: '',
     laminateCode: '',
-    plywoodType: 'Apple Ply 16mm BWP',
+    A: 'Apple Ply 16mm BWP',
     quantity: 1,
     grainDirection: false,
     gaddi: true
   });
   const shutterLaminateInputRef = useRef<HTMLInputElement>(null);
-  const [colourFrameForm, setColourFrameForm] = useState({ height: 2400, width: 80, laminateCode: '', quantity: 1, note: '', customLaminateCode: '', plywoodType: 'Apple Ply 16mm BWP', grainDirection: false });
+  const [colourFrameForm, setColourFrameForm] = useState({ height: 2400, width: 80, laminateCode: '', quantity: 1, note: '', customLaminateCode: '', A: 'Apple Ply 16mm BWP', grainDirection: false });
   const [colourFrameEnabled, setColourFrameEnabled] = useState(false);
   const [gaddiForm, setGaddiForm] = useState({ height: 2400, width: 80, laminateCode: 'Manual Type', quantity: 0, note: '', customLaminateCode: '', thickness: '' });
   const [gaddiEnabled, setGaddiEnabled] = useState(false);
@@ -605,8 +603,7 @@ export default function Home() {
       backPanelInnerLaminateCode: 'off white',
       centerPostInnerLaminateCode: 'off white', // ✅ FIX: Add missing for grain direction lookup
       shelvesInnerLaminateCode: 'off white', // ✅ FIX: Add missing for grain direction lookup
-      plywoodType: storedMemory.plywoodType ?? 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: storedMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
+      A: storedMemory.A ?? 'Apple Ply 16mm BWP',
       A: storedMemory.A ?? 'Apple Ply 16mm BWP',
       innerLaminateCode: 'off white',
       // Grain direction fields - default to false for new forms
@@ -716,7 +713,7 @@ export default function Home() {
       const composedCode = composeLaminateCode(shutterLaminateCode, shutterInnerLaminateCode);
       setColourFrameForm(prev => ({
         ...prev,
-        plywoodType: A || 'Apple Ply 16mm BWP',
+        A: A || 'Apple Ply 16mm BWP',
         laminateCode: composedCode
       }));
     }
@@ -1087,7 +1084,7 @@ export default function Home() {
     
     // Update main plywood type (used by Top, Bottom, Left, Right panels)
     // Back panel plywood is now independent
-    form.setValue('plywoodType', newValue);
+    form.setValue('A', newValue);
     
     setTimeout(() => {
       currentSyncOrigin.current = null;
@@ -1209,7 +1206,7 @@ export default function Home() {
       }))
     );
     // Update current cabinet form
-    form.setValue('plywoodType', newPlywood);
+    form.setValue('A', newPlywood);
     // backPanelPlywoodBrand is now independent
   };
 
@@ -1620,7 +1617,7 @@ export default function Home() {
       if (globalPlywoodBrandMemory.includes(newBrand)) {
         // Set the selection to show the existing brand
         setBackPanelPlywoodSelection(newBrand);
-        form.setValue('backPanelPlywoodBrand', newBrand);
+        form.setValue('A', newBrand);
         setBackPanelPlywoodSaveStatus('ready');
         setTimeout(() => setBackPanelPlywoodSaveStatus(''), 2000);
       } else {
@@ -1629,7 +1626,7 @@ export default function Home() {
         
         // Set the selection to show the newly saved brand
         setBackPanelPlywoodSelection(newBrand);
-        form.setValue('backPanelPlywoodBrand', newBrand);
+        form.setValue('A', newBrand);
         setBackPanelPlywoodSaveStatus('saved');
         setTimeout(() => setBackPanelPlywoodSaveStatus(''), 2000);
       }
@@ -1875,7 +1872,7 @@ export default function Home() {
           width: cabinet.width,
           height: cabinet.height,
           laminateCode: laminateCode,
-          plywoodType: plywoodType,
+          A: plywoodType,
           grainDirection: cabinet.shutterGrainDirection === true,
           gaddi: cabinet.shutterGaddi === true,
           nomW: cabinet.width,
@@ -1931,7 +1928,7 @@ export default function Home() {
         laminateCode: topLaminateCode,
         gaddi: cabinet.topPanelGaddi === true,
         grainDirection: cabinet.topPanelGrainDirection === true,
-        plywoodType: plywoodType,
+        A: plywoodType,
         nomW: dimensions.top.width,
         nomH: dimensions.top.height
       },
@@ -1943,7 +1940,7 @@ export default function Home() {
         laminateCode: bottomLaminateCode,
         gaddi: cabinet.bottomPanelGaddi === true,
         grainDirection: cabinet.bottomPanelGrainDirection === true,
-        plywoodType: plywoodType,
+        A: plywoodType,
         nomW: dimensions.bottom.width,
         nomH: dimensions.bottom.height
       },
@@ -1955,7 +1952,7 @@ export default function Home() {
         laminateCode: leftLaminateCode,
         gaddi: cabinet.leftPanelGaddi === true,
         grainDirection: cabinet.leftPanelGrainDirection === true,
-        plywoodType: plywoodType,
+        A: plywoodType,
         nomW: leftNomW,
         nomH: leftNomH
       },
@@ -1967,7 +1964,7 @@ export default function Home() {
         laminateCode: rightLaminateCode,
         gaddi: cabinet.rightPanelGaddi === true,
         grainDirection: cabinet.rightPanelGrainDirection === true,
-        plywoodType: plywoodType,
+        A: plywoodType,
         nomW: rightNomW,
         nomH: rightNomH
       }
@@ -1995,7 +1992,7 @@ export default function Home() {
           height: shutter.height,
           laminateCode: composedShutterLaminateCode, // ✅ Use composed code for consolidation matching
           grainDirection: hasShutterGrain, // Read from cabinet object
-          plywoodType: plywoodType, // ALWAYS use cabinet plywood (same as regular panels)
+          A: plywoodType, // ALWAYS use cabinet plywood (same as regular panels)
           nomW: nomW,
           nomH: nomH
         });
@@ -2023,7 +2020,7 @@ export default function Home() {
           height: cabinet.centerPostHeight,
           laminateCode: centerPostLaminateCode,
           grainDirection: hasCenterPostGrain,
-          plywoodType: plywoodType,
+          A: plywoodType,
           nomW: nomW,
           nomH: nomH
         });
@@ -2055,7 +2052,7 @@ export default function Home() {
           height: cabinet.depth - 20, // Standard shelf depth reduction
           laminateCode: shelvesLaminateCode,
           grainDirection: hasShelfGrain,
-          plywoodType: plywoodType,
+          A: plywoodType,
           nomW: nomW,
           nomH: nomH
         });
@@ -2075,7 +2072,7 @@ export default function Home() {
       height: dimensions.back.height,
       laminateCode: backLaminateCode,
       grainDirection: cabinet.backPanelGrainDirection === true,
-      plywoodType: backPanelPlywoodBrand,
+      A: backPanelPlywoodBrand,
       nomW: dimensions.back.width,
       nomH: dimensions.back.height
     });
@@ -2110,8 +2107,8 @@ export default function Home() {
     const panelsByBrand = allPanels.reduce((acc, panel) => {
       const isBackPanel = panel.name.includes('- Back Panel');
       const brand = isBackPanel 
-        ? (panel.backPanelPlywoodBrand || panel.plywoodType || 'Apple ply 6mm BWP')
-        : (panel.plywoodType || 'Apple Ply 16mm BWP');
+        ? (panel.A || panel.A || 'Apple ply 6mm BWP')
+        : (panel.A || 'Apple Ply 16mm BWP');
       const laminateCode = panel.laminateCode || '';
       const fullLaminateCode = laminateCode.trim();
       const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(fullLaminateCode)}`;
@@ -2178,7 +2175,7 @@ export default function Home() {
     console.log('Total shutters found:', shutterCount);
     const shutterGrouping = allPanels.filter(p => p.name.includes('- Shutter')).map(s => ({
       name: s.name,
-      plywood: s.plywoodType,
+      plywood: s.A,
       laminate: s.laminateCode
     }));
     console.log('Shutter grouping:', shutterGrouping);
@@ -2282,8 +2279,8 @@ export default function Home() {
       const isBackPanel = panel.name.includes('- Back Panel');
       // For back panels: use backPanelPlywoodBrand, fall back to plywoodType, then default
       const brand = isBackPanel 
-        ? (panel.backPanelPlywoodBrand || panel.plywoodType || 'Apple ply 6mm BWP')
-        : (panel.plywoodType || 'Apple Ply 16mm BWP');
+        ? (panel.A || panel.A || 'Apple ply 6mm BWP')
+        : (panel.A || 'Apple Ply 16mm BWP');
       const laminateCode = panel.laminateCode || '';
       
       // Use FULL laminate code (includes both front + inner laminate)
@@ -2595,9 +2592,9 @@ export default function Home() {
       rightPanelInnerLaminateCode: 'off white',
       backPanelInnerLaminateCode: 'off white',
       innerLaminateCode: 'off white',
-      plywoodType: memory.plywoodType ?? 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: memory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
-      A: shutterMemoryNew.A ?? (memory.plywoodType ?? 'Apple Ply 16mm BWP'), // ✅ Use shutter memory
+      plywoodType: memory.A ?? 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: memory.A ?? 'Apple ply 6mm BWP',
+      A: shutterMemoryNew.A ?? (memory.A ?? 'Apple Ply 16mm BWP'), // ✅ Use shutter memory
       // ✅ DIRECT LINK: Initialize grain directions from database preferences, not hardcoded false
       topPanelGrainDirection: hasTopWoodGrain,
       bottomPanelGrainDirection: hasTopWoodGrain,
@@ -2828,9 +2825,9 @@ export default function Home() {
     }
     
     // Save cabinet memory for Advanced mode auto-fill
-    if (mode === 'advanced' && (cabinet.plywoodType || cabinet.topPanelLaminateCode)) {
+    if (mode === 'advanced' && (cabinet.A || cabinet.topPanelLaminateCode)) {
       saveCabinetFormMemory({
-        plywoodType: cabinet.plywoodType,
+        plywoodType: cabinet.A,
         topPanelLaminateCode: cabinet.topPanelLaminateCode,
         backPanelLaminateCode: cabinet.backPanelLaminateCode,
         height: cabinet.height,
@@ -2897,9 +2894,9 @@ export default function Home() {
       shutters: [],
       shutterLaminateCode: shutterMemory?.shutterLaminateCode || '',  // ✅ Keep laminate code
       shutterInnerLaminateCode: shutterMemory?.shutterInnerLaminateCode || '',  // ✅ Keep inner laminate
-      plywoodType: cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: cabinetMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
-      A: shutterMemory?.A ?? (cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP'),
+      plywoodType: cabinetMemory.A ?? 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: cabinetMemory.A ?? 'Apple ply 6mm BWP',
+      A: shutterMemory?.A ?? (cabinetMemory.A ?? 'Apple Ply 16mm BWP'),
       topPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
       bottomPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
       leftPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
@@ -2967,9 +2964,9 @@ export default function Home() {
         centerPostInnerLaminateCode: 'off white',
         shelvesInnerLaminateCode: 'off white',
         innerLaminateCode: 'off white',
-        plywoodType: cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP',
-        backPanelPlywoodBrand: cabinetMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
-        A: cabinetMemory.A ?? (cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP'),
+        plywoodType: cabinetMemory.A ?? 'Apple Ply 16mm BWP',
+        backPanelPlywoodBrand: cabinetMemory.A ?? 'Apple ply 6mm BWP',
+        A: cabinetMemory.A ?? (cabinetMemory.A ?? 'Apple Ply 16mm BWP'),
         shutterLaminateCode: cabinetMemory.shutterLaminateCode ?? '',
         shutterInnerLaminateCode: cabinetMemory.shutterInnerLaminateCode ?? '',
         backPanelWidthReduction: 0,
@@ -3159,10 +3156,10 @@ export default function Home() {
           let plywoodType = 'Apple Ply 16mm BWP';
           if (isBackPanel && relatedCabinets.length > 0) {
             // Use back panel plywood brand directly
-            plywoodType = relatedCabinets[0]?.backPanelPlywoodBrand || 'Apple ply 6mm BWP';
+            plywoodType = relatedCabinets[0]?.A || 'Apple ply 6mm BWP';
           } else if (quickShutterCabinet) {
             // Use Quick Shutter plywood type if available
-            plywoodType = quickShutterCabinet.plywoodType || 'Apple Ply 16mm BWP';
+            plywoodType = quickShutterCabinet.A || 'Apple Ply 16mm BWP';
           }
           
           // Get laminate code - separate Base Cabinet vs Quick Shutter systems
@@ -3660,8 +3657,8 @@ export default function Home() {
       const panelsByBrand = allPanels.reduce((acc, panel) => {
         const isBackPanel = panel.name.includes('- Back Panel');
         const brand = isBackPanel 
-          ? (panel.backPanelPlywoodBrand || panel.plywoodType || 'Apple ply 6mm BWP')
-          : (panel.plywoodType || 'Apple Ply 16mm BWP');
+          ? (panel.A || panel.A || 'Apple ply 6mm BWP')
+          : (panel.A || 'Apple Ply 16mm BWP');
         const laminateCode = panel.laminateCode || '';
         
         // Use FULL laminate code (includes both front + inner laminate)
@@ -4752,7 +4749,7 @@ export default function Home() {
                                         key={brand.id}
                                         value={brand.brand}
                                         onSelect={(currentValue) => {
-                                          form.setValue('plywoodType', currentValue);
+                                          form.setValue('A', currentValue);
                                           if (panelsLinked) {
                                             syncPlywoodBrand(currentValue, 'main');
                                           }
@@ -4986,7 +4983,7 @@ export default function Home() {
                                         key={brand.id}
                                         value={brand.brand}
                                         onSelect={(currentValue) => {
-                                          form.setValue('backPanelPlywoodBrand', currentValue);
+                                          form.setValue('A', currentValue);
                                           setBackPanelPlywoodOpen(false);
                                           focusNextField('backPanelPlywood');
                                         }}
@@ -7416,7 +7413,7 @@ export default function Home() {
             const unplacedManualPanels = manualPanels.filter(mp => !placedManualPanelIds.has(mp.id));
             if (unplacedManualPanels.length > 0) {
               const unplacedByGroup = unplacedManualPanels.reduce((acc, mp) => {
-                const brand = mp.plywoodType;
+                const brand = mp.A;
                 const laminateCode = mp.laminateCode || '';
                 const isBackPanel = mp.targetSheet?.isBackPanel || false;
                 const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(laminateCode)}|||${isBackPanel}`;
@@ -7492,7 +7489,7 @@ export default function Home() {
               
               // Find matching brandResult (same plywood + laminates)
               const matchingBrandIdx = brandResults.findIndex(br => 
-                br.brand === colourFrameForm.plywoodType && 
+                br.brand === colourFrameForm.A && 
                 br.laminateCode === (colourFrameForm.laminateCode || '')
               );
               
@@ -7525,7 +7522,7 @@ export default function Home() {
                 
                 if (mergedResult?.panels) {
                   mergedResult.panels.forEach((sheet: any, sheetIdx: number) => {
-                    sheet._sheetId = `${normalizeForGrouping(colourFrameForm.plywoodType)}|||${normalizeForGrouping(colourFrameForm.laminateCode)}-${sheetIdx}`;
+                    sheet._sheetId = `${normalizeForGrouping(colourFrameForm.A)}|||${normalizeForGrouping(colourFrameForm.laminateCode)}-${sheetIdx}`;
                     // Restore grain and compute display dims for every placed panel
                     sheet.placed?.forEach((p: any) => { 
                       const found = allParts.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
@@ -7566,7 +7563,7 @@ export default function Home() {
                 }
                 
                 brandResults.push({ 
-                  brand: colourFrameForm.plywoodType,
+                  brand: colourFrameForm.A,
                   laminateCode: colourFrameForm.laminateCode || '',
                   laminateDisplay: colourFrameLaminateDisplay,
                   result: colourFrameResult, 
@@ -8267,7 +8264,7 @@ export default function Home() {
             <div className="space-y-1">
               <Label className="text-sm">Plywood Type</Label>
               <Select
-                value={manualPanelForm.plywoodType}
+                value={manualPanelForm.A}
                 onValueChange={(value) => setManualPanelForm(prev => ({ ...prev, plywoodType: value }))}
               >
                 <SelectTrigger data-testid="select-manual-panel-plywood" className="h-9">
@@ -8365,7 +8362,7 @@ export default function Home() {
                     height,
                     width,
                     laminateCode: manualPanelForm.laminateCode,
-                    plywoodType: manualPanelForm.plywoodType,
+                    plywoodType: manualPanelForm.A,
                     quantity: manualPanelForm.quantity,
                     grainDirection: hasWoodGrains, // ✅ DIRECT LINK: Database only, no form/toggle
                     gaddi: manualPanelForm.gaddi,
@@ -8576,7 +8573,7 @@ export default function Home() {
             if (rowData.qty) form.setValue('shutterCount', parseInt(rowData.qty) || 1);
             if (rowData.roomName) form.setValue('roomName', rowData.roomName);
             if (rowData.cabinetName) form.setValue('name', rowData.cabinetName);
-            if (rowData.plywoodBrand) form.setValue('plywoodType', rowData.plywoodBrand);
+            if (rowData.plywoodBrand) form.setValue('A', rowData.plywoodBrand);
             if (rowData.frontLaminate) {
               form.setValue('topPanelLaminateCode', rowData.frontLaminate);
               // Sync to all panels if link panels is enabled
