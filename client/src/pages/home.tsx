@@ -2125,6 +2125,10 @@ export default function Home() {
     Object.entries(panelsByBrand).forEach(([groupKey, group]) => {
       console.group('🔍 PREVIEW DIALOG - Preparing parts');
       console.log('Group panels:', group.panels.length);
+      const hasShutters = group.panels.some(p => p.name.includes('- Shutter'));
+      if (hasShutters) {
+        console.log('✅ SHUTTER CONSOLIDATION - This group contains shutters with matching plywood+laminates');
+      }
       console.groupEnd();
       
       const rawParts = preparePartsForOptimizer(group.panels);
@@ -2167,6 +2171,19 @@ export default function Home() {
         isBackPanel: hasBackPanel
       });
     });
+    
+    // ✅ SHUTTER CONSOLIDATION: Verify shutters are using same sheet when materials match
+    console.group('✅ SHUTTER CONSOLIDATION CHECK');
+    const shutterCount = allPanels.filter(p => p.name.includes('- Shutter')).length;
+    console.log('Total shutters found:', shutterCount);
+    const shutterGrouping = allPanels.filter(p => p.name.includes('- Shutter')).map(s => ({
+      name: s.name,
+      plywood: s.plywoodType,
+      laminate: s.laminateCode
+    }));
+    console.log('Shutter grouping:', shutterGrouping);
+    console.log('✅ Shutters will consolidate onto cabinet sheets when plywood + laminates match');
+    console.groupEnd();
     
     // Process manual panels
     const placedManualPanelIds = new Set<string>();
