@@ -7752,21 +7752,9 @@ export default function Home() {
                                       height: `${h}px`
                                     }}
                                   >
-                                    {/* Only show panel name and dimensions on panels >= 200mm in both dimensions */}
+                                    {/* Only show panel name on panels >= 200mm in both dimensions */}
                                     {panel.w >= 200 && panel.h >= 200 && (
                                       <>
-                                        {/* Dimensions - Top Right - Responsive font size with padding to avoid overlap */}
-                                        <p 
-                                          className="absolute font-semibold"
-                                          style={{
-                                            right: '8px',
-                                            top: '4px',
-                                            fontSize: `${Math.max(8, Math.min(14, w / 12, h / 8))}px`
-                                          }}
-                                        >
-                                          {Math.round(showW)}×{Math.round(showH)}
-                                        </p>
-                                        
                                         {/* Panel name - Bottom Center - Responsive font size */}
                                         <p 
                                           className="absolute font-bold uppercase"
