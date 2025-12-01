@@ -971,7 +971,7 @@ export default function Home() {
   const [rightSaveStatus, setRightSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Back Panel)
-  const [backLaminateSelection, setBackLaminateSelection] = useState('');
+  const [backLaminateSelection, setBackLaminateSelection] = useState('off white');
   const [backCustomLaminateInput, setBackCustomLaminateInput] = useState('');
   const [backSaveStatus, setBackSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
