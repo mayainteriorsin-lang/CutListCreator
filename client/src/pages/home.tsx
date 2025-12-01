@@ -696,15 +696,19 @@ export default function Home() {
     }
   }, [masterLaminateCode, masterInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
 
-  // ✅ AUTO-SYNC: Shutter laminates auto-sync when main panel laminates are selected (quick sync)
+  // ✅ AUTO-SYNC: Shutter laminates auto-sync when ANY main panel laminates are selected (quick sync)
   useEffect(() => {
-    if (topPanelLaminateCode && topPanelLaminateCode !== shutterLaminateCode) {
-      form.setValue('shutterLaminateCode', topPanelLaminateCode);
+    // Use first non-empty panel laminate (priority: top > bottom > left > right)
+    const mainFrontLaminate = topPanelLaminateCode || bottomPanelLaminateCode || leftPanelLaminateCode || rightPanelLaminateCode;
+    const mainInnerLaminate = topPanelInnerLaminateCode || bottomPanelInnerLaminateCode || leftPanelInnerLaminateCode || rightPanelInnerLaminateCode;
+    
+    if (mainFrontLaminate && mainFrontLaminate !== shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', mainFrontLaminate);
     }
-    if (topPanelInnerLaminateCode && topPanelInnerLaminateCode !== shutterInnerLaminateCode) {
-      form.setValue('shutterInnerLaminateCode', topPanelInnerLaminateCode);
+    if (mainInnerLaminate && mainInnerLaminate !== shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', mainInnerLaminate);
     }
-  }, [topPanelLaminateCode, topPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
+  }, [topPanelLaminateCode, bottomPanelLaminateCode, leftPanelLaminateCode, rightPanelLaminateCode, topPanelInnerLaminateCode, bottomPanelInnerLaminateCode, leftPanelInnerLaminateCode, rightPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
 
   // ✅ AUTO-SYNC: Center Post and Shelves inherit cabinet Inner Laminate code for both sides (time-saver)
   // Logic: Use cabinet Inner Laminate for front and inner sides
@@ -3016,7 +3020,9 @@ export default function Home() {
         leftPanelLaminateCode: cabinetMemory.leftPanelLaminateCode ?? '',
         rightPanelLaminateCode: cabinetMemory.rightPanelLaminateCode ?? '',
         backPanelLaminateCode: cabinetMemory.backPanelLaminateCode ?? '',
+        shutterLaminateCode: cabinetMemory.shutterLaminateCode ?? '',
         centerPostLaminateCode: cabinetMemory.centerPostLaminateCode ?? '',
+        shelvesLaminateCode: cabinetMemory.shelvesLaminateCode ?? '',
         topPanelInnerLaminateCode: cabinetMemory.topPanelInnerLaminateCode ?? 'off white',
         bottomPanelInnerLaminateCode: cabinetMemory.bottomPanelInnerLaminateCode ?? 'off white',
         leftPanelInnerLaminateCode: cabinetMemory.leftPanelInnerLaminateCode ?? 'off white',
