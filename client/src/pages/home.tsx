@@ -668,9 +668,8 @@ export default function Home() {
   // ✅ DIRECT LINK: Auto-update grain directions when laminate codes change in form
   // FIX: Use individual field watches to prevent infinite loop from watchedValues object reference changing
   // IMPORTANT: Define watches BEFORE using them in useEffects
-  const frontLaminateCode = form.watch('frontLaminateCode');
-  const innerLaminateCode = form.watch('innerLaminateCode');
   const topPanelLaminateCode = form.watch('topPanelLaminateCode');
+  const topPanelInnerLaminateCode = form.watch('topPanelInnerLaminateCode');
   const bottomPanelLaminateCode = form.watch('bottomPanelLaminateCode');
   const leftPanelLaminateCode = form.watch('leftPanelLaminateCode');
   const rightPanelLaminateCode = form.watch('rightPanelLaminateCode');
@@ -679,15 +678,15 @@ export default function Home() {
   const shutterPlywoodBrand = form.watch('shutterPlywoodBrand');
   const shutterInnerLaminateCode = form.watch('shutterInnerLaminateCode');
   
-  // ✅ AUTO-SYNC: Shutter laminate inherits main Front/Inner Laminate codes (time-saver)
+  // ✅ AUTO-SYNC: Shutter laminate inherits main Top Panel Front/Inner Laminate codes (time-saver)
   useEffect(() => {
-    if (frontLaminateCode && !shutterLaminateCode) {
-      form.setValue('shutterLaminateCode', frontLaminateCode);
+    if (topPanelLaminateCode && !shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', topPanelLaminateCode);
     }
-    if (innerLaminateCode && !shutterInnerLaminateCode) {
-      form.setValue('shutterInnerLaminateCode', innerLaminateCode);
+    if (topPanelInnerLaminateCode && !shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', topPanelInnerLaminateCode);
     }
-  }, [frontLaminateCode, innerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
+  }, [topPanelLaminateCode, topPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
   
   // ✅ AUTO-SYNC: Colour Frame inherits Quick Shutter materials for consolidation
   useEffect(() => {
