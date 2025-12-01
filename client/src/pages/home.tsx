@@ -701,17 +701,28 @@ export default function Home() {
 
   // ✅ AUTO-SYNC: Shutter laminates auto-sync when ANY main panel laminates are selected (quick sync)
   useEffect(() => {
-    // Use first non-empty panel laminate (priority: top > bottom > left > right)
-    const mainFrontLaminate = topPanelLaminateCode || bottomPanelLaminateCode || leftPanelLaminateCode || rightPanelLaminateCode;
-    const mainInnerLaminate = topPanelInnerLaminateCode || bottomPanelInnerLaminateCode || leftPanelInnerLaminateCode || rightPanelInnerLaminateCode;
+    // Sync front laminate - use first non-empty value
+    if (topPanelLaminateCode && topPanelLaminateCode !== shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', topPanelLaminateCode);
+    } else if (bottomPanelLaminateCode && bottomPanelLaminateCode !== shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', bottomPanelLaminateCode);
+    } else if (leftPanelLaminateCode && leftPanelLaminateCode !== shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', leftPanelLaminateCode);
+    } else if (rightPanelLaminateCode && rightPanelLaminateCode !== shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', rightPanelLaminateCode);
+    }
     
-    if (mainFrontLaminate && mainFrontLaminate !== shutterLaminateCode) {
-      form.setValue('shutterLaminateCode', mainFrontLaminate);
+    // Sync inner laminate - use first non-empty value
+    if (topPanelInnerLaminateCode && topPanelInnerLaminateCode !== shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', topPanelInnerLaminateCode);
+    } else if (bottomPanelInnerLaminateCode && bottomPanelInnerLaminateCode !== shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', bottomPanelInnerLaminateCode);
+    } else if (leftPanelInnerLaminateCode && leftPanelInnerLaminateCode !== shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', leftPanelInnerLaminateCode);
+    } else if (rightPanelInnerLaminateCode && rightPanelInnerLaminateCode !== shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', rightPanelInnerLaminateCode);
     }
-    if (mainInnerLaminate && mainInnerLaminate !== shutterInnerLaminateCode) {
-      form.setValue('shutterInnerLaminateCode', mainInnerLaminate);
-    }
-  }, [topPanelLaminateCode, bottomPanelLaminateCode, leftPanelLaminateCode, rightPanelLaminateCode, topPanelInnerLaminateCode, bottomPanelInnerLaminateCode, leftPanelInnerLaminateCode, rightPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
+  }, [topPanelLaminateCode, topPanelInnerLaminateCode, bottomPanelLaminateCode, bottomPanelInnerLaminateCode, leftPanelLaminateCode, leftPanelInnerLaminateCode, rightPanelLaminateCode, rightPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
 
   // ✅ AUTO-SYNC: Center Post and Shelves inherit cabinet Inner Laminate code for both sides (time-saver)
   // Logic: Use cabinet Inner Laminate for front and inner sides
