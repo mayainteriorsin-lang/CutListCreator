@@ -45,7 +45,6 @@ interface CabinetFormMemory {
   width?: number;
   depth?: number;
   A?: string;
-  backPanelPlywoodBrand?: string;
   widthReduction?: number;
   // ✅ IMPROVED: Store ALL front laminate codes from all panel types
   topPanelLaminateCode?: string;
@@ -625,7 +624,6 @@ export default function Home() {
       rightPanelInnerLaminateCode: storedMemory.rightPanelInnerLaminateCode ?? 'off white',
       backPanelInnerLaminateCode: storedMemory.backPanelInnerLaminateCode ?? 'off white',
       A: storedMemory.A ?? 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: storedMemory.backPanelPlywoodBrand ?? '6 mm bwp',
       innerLaminateCode: storedMemory.topPanelInnerLaminateCode ?? 'off white',
       // Grain direction fields - default to false for new forms
       topPanelGrainDirection: false,
@@ -706,27 +704,24 @@ export default function Home() {
   const formDepth = form.watch('depth');
   const formWidthReduction = form.watch('widthReduction');
   const formRoomName = form.watch('roomName');
-  const formBackPanelPlywoodBrand = form.watch('backPanelPlywoodBrand');
   
   // ✅ REAL-TIME SAVE: Save plywood, dimensions, and room name when they change
   const prevCoreFieldsRef = useRef<{
-    A?: string; backPanelPlywoodBrand?: string; height?: number; width?: number; depth?: number; widthReduction?: number; roomName?: string;
+    A?: string; height?: number; width?: number; depth?: number; widthReduction?: number; roomName?: string;
   }>({});
   
   useEffect(() => {
     const aChanged = prevCoreFieldsRef.current.A !== A;
-    const backPanelPlywoodChanged = prevCoreFieldsRef.current.backPanelPlywoodBrand !== formBackPanelPlywoodBrand;
     const heightChanged = prevCoreFieldsRef.current.height !== formHeight;
     const widthChanged = prevCoreFieldsRef.current.width !== formWidth;
     const depthChanged = prevCoreFieldsRef.current.depth !== formDepth;
     const widthReductionChanged = prevCoreFieldsRef.current.widthReduction !== formWidthReduction;
     const roomNameChanged = prevCoreFieldsRef.current.roomName !== formRoomName;
     
-    if (aChanged || backPanelPlywoodChanged || heightChanged || widthChanged || depthChanged || widthReductionChanged || roomNameChanged) {
+    if (aChanged || heightChanged || widthChanged || depthChanged || widthReductionChanged || roomNameChanged) {
       // Save to memory immediately when any core field changes
       saveCabinetFormMemory({
         A: A || undefined,
-        backPanelPlywoodBrand: formBackPanelPlywoodBrand || undefined,
         height: formHeight || undefined,
         width: formWidth || undefined,
         depth: formDepth || undefined,
@@ -736,7 +731,6 @@ export default function Home() {
       // Update refs
       prevCoreFieldsRef.current = {
         A,
-        backPanelPlywoodBrand: formBackPanelPlywoodBrand,
         height: formHeight,
         width: formWidth,
         depth: formDepth,
@@ -744,7 +738,7 @@ export default function Home() {
         roomName: formRoomName,
       };
     }
-  }, [A, formBackPanelPlywoodBrand, formHeight, formWidth, formDepth, formWidthReduction, formRoomName]);
+  }, [A, formHeight, formWidth, formDepth, formWidthReduction, formRoomName]);
   
   // ✅ AUTO-SYNC: Shutter laminate inherits main/master laminate codes (time-saver)
   useEffect(() => {
@@ -1992,8 +1986,8 @@ export default function Home() {
     
     // Get plywood types (default to Apple Ply 16mm BWP if not set)
     const A = cabinet.A || 'Apple Ply 16mm BWP';
-    // Back panel uses dedicated thinner plywood (default: 6 mm bwp) - INDEPENDENT from A
-    const backPanelPlywoodBrand = cabinet.backPanelPlywoodBrand || '6 mm bwp';
+    // Back panel uses dedicated thinner plywood (default: 6 mm bwp)
+    const backPanelPlywoodBrand = (cabinet as any).backPanelPlywoodBrand || '6 mm bwp';
     
     // Pre-compose laminate codes for dynamic grain direction checks
     const topLaminateCode = composeLaminateCode(
@@ -2672,7 +2666,6 @@ export default function Home() {
       width: cabinet.width,
       depth: cabinet.depth,
       A: cabinet.A,
-      backPanelPlywoodBrand: cabinet.backPanelPlywoodBrand,
       widthReduction: cabinet.widthReduction,
       // ✅ IMPROVED: Store ALL front laminate codes
       topPanelLaminateCode: cabinet.topPanelLaminateCode,
@@ -2748,7 +2741,6 @@ export default function Home() {
       backPanelInnerLaminateCode: memory.backPanelInnerLaminateCode ?? 'off white',
       innerLaminateCode: 'off white',
       A: memory.A ?? 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: memory.backPanelPlywoodBrand ?? '6 mm bwp',
       // ✅ DIRECT LINK: Initialize grain directions from database preferences, not hardcoded false
       topPanelGrainDirection: hasTopWoodGrain,
       bottomPanelGrainDirection: hasTopWoodGrain,
@@ -4960,7 +4952,7 @@ export default function Home() {
                                 data-testid="select-back-panel-plywood-brand"
                                 ref={(el) => registerFieldRef('backPanelPlywood', el)}
                               >
-                                {watchedValues.backPanelPlywoodBrand || 'Select plywood brand'}
+                                {watchedValues.A || 'Select plywood brand'}
                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                               </Button>
                             </PopoverTrigger>
@@ -4979,14 +4971,14 @@ export default function Home() {
                                         key={brand.id}
                                         value={brand.brand}
                                         onSelect={(currentValue) => {
-                                          form.setValue('backPanelPlywoodBrand', currentValue);
+                                          form.setValue('A', currentValue);
                                           setBackPanelPlywoodOpen(false);
                                           focusNextField('backPanelPlywood');
                                         }}
                                       >
                                         <Check
                                           className={`mr-2 h-4 w-4 ${
-                                            watchedValues.backPanelPlywoodBrand === brand.brand ? 'opacity-100' : 'opacity-0'
+                                            watchedValues.A === brand.brand ? 'opacity-100' : 'opacity-0'
                                           }`}
                                         />
                                         {brand.brand}

@@ -127,12 +127,8 @@ export const cabinetSchema = z.object({
   customPlywoodType: z.string().optional(),
   
   // ✅ UNIFIED PLYWOOD FIELD (Secret code name: A)
-  // Used for: Cabinet panels (Top, Bottom, Left, Right) and Shutters
+  // Replaces: plywoodType, backPanelPlywoodBrand, shutterPlywoodBrand
   A: z.string().optional(),
-  
-  // ✅ INDEPENDENT Back Panel Plywood Brand
-  // Separate from A to allow different plywood for back panel
-  backPanelPlywoodBrand: z.string().optional(),
   
   // ✅ UNIFIED LAMINATE CODE FIELDS (Secret code names: B = front, C = inner)
   // Backend consolidation fields for laminate codes
