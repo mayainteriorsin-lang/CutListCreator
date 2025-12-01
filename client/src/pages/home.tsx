@@ -7719,7 +7719,8 @@ export default function Home() {
                                                  panel.id.toUpperCase().includes('RIGHT') ? 'RIGHT' :
                                                  panel.id.toUpperCase().includes('TOP') ? 'TOP' :
                                                  panel.id.toUpperCase().includes('BOTTOM') ? 'BOTTOM' :
-                                                 panel.id.toUpperCase().includes('BACK') ? 'BACK' : 
+                                                 panel.id.toUpperCase().includes('BACK') ? 'BACK' :
+                                                 panel.id.toUpperCase().includes('SHUTTER') ? 'SHUTTER' : 
                                                  panel.id;
                                 
                                 const isGaddi = panel.gaddi === true;
