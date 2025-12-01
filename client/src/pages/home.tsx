@@ -688,16 +688,22 @@ export default function Home() {
     }
   }, [masterLaminateCode, masterInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
 
-  // ✅ AUTO-SYNC: Center Post and Shelves inherit cabinet Inner Laminate code only (time-saver)
-  // Logic: Use cabinet Inner Laminate for inner side only, nothing for front side
+  // ✅ AUTO-SYNC: Center Post and Shelves inherit cabinet Inner Laminate code for both sides (time-saver)
+  // Logic: Use cabinet Inner Laminate for front and inner sides
   useEffect(() => {
     if (masterInnerLaminateCode) {
-      // Sync Center Post - inner side only
+      // Sync Center Post - both front and inner sides
+      if (!form.getValues('centerPostLaminateCode')) {
+        form.setValue('centerPostLaminateCode', masterInnerLaminateCode);
+      }
       if (!form.getValues('centerPostInnerLaminateCode')) {
         form.setValue('centerPostInnerLaminateCode', masterInnerLaminateCode);
       }
       
-      // Sync Shelves - inner side only
+      // Sync Shelves - both front and inner sides
+      if (!form.getValues('shelvesLaminateCode')) {
+        form.setValue('shelvesLaminateCode', masterInnerLaminateCode);
+      }
       if (!form.getValues('shelvesInnerLaminateCode')) {
         form.setValue('shelvesInnerLaminateCode', masterInnerLaminateCode);
       }
