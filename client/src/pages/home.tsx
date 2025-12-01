@@ -5140,68 +5140,101 @@ export default function Home() {
                           />
                         </div>
                         {watchedValues.centerPostEnabled && (
-                          <div className="space-y-3">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
-                              <div className="space-y-2">
-                                <Label className="text-xs text-slate-600">Center Post Qty</Label>
-                                <Select
-                                  value={watchedValues.centerPostQuantity?.toString() || '1'}
-                                  onValueChange={(value) => form.setValue('centerPostQuantity', parseInt(value))}
-                                >
-                                  <SelectTrigger className="h-8 text-sm">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="1">1</SelectItem>
-                                    <SelectItem value="2">2</SelectItem>
-                                    <SelectItem value="3">3</SelectItem>
-                                    <SelectItem value="4">4</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              
-                              <div className="space-y-2">
-                                <Label className="text-xs text-slate-600">Height</Label>
-                                <div className="relative">
-                                  <Input
-                                    type="number"
-                                    {...form.register('centerPostHeight', { valueAsNumber: true })}
-                                    className="text-sm pr-8"
-                                    placeholder="Height"
-                                  />
-                                  <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
-                                </div>
-                              </div>
-                              
-                              <div className="space-y-2">
-                                <Label className="text-xs text-slate-600">Depth</Label>
-                                <div className="relative">
-                                  <Input
-                                    type="number"
-                                    {...form.register('centerPostDepth', { valueAsNumber: true })}
-                                    className="text-sm pr-8"
-                                    placeholder="Depth"
-                                  />
-                                  <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
-                                </div>
-                              </div>
-                              
-                              <div className="space-y-2">
-                                <Label className="text-xs text-slate-600 invisible">Reset</Label>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    form.setValue('centerPostHeight', watchedValues.height - 36);
-                                    form.setValue('centerPostDepth', watchedValues.depth - 20);
-                                  }}
-                                  className="h-8 px-3 text-xs w-full"
-                                >
-                                  Reset
-                                </Button>
+                          <div className="space-y-4 mt-4">
+                            <div className="space-y-2">
+                              <Label className="text-xs text-slate-600">Center Post Qty</Label>
+                              <Select
+                                value={watchedValues.centerPostQuantity?.toString() || '1'}
+                                onValueChange={(value) => form.setValue('centerPostQuantity', parseInt(value))}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="1">1</SelectItem>
+                                  <SelectItem value="2">2</SelectItem>
+                                  <SelectItem value="3">3</SelectItem>
+                                  <SelectItem value="4">4</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <Label className="text-xs text-slate-600">Height</Label>
+                              <div className="relative">
+                                <Input
+                                  type="number"
+                                  {...form.register('centerPostHeight', { valueAsNumber: true })}
+                                  className="text-sm pr-8"
+                                  placeholder="Height"
+                                />
+                                <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
                               </div>
                             </div>
+                            
+                            <div className="space-y-2">
+                              <Label className="text-xs text-slate-600">Depth</Label>
+                              <div className="relative">
+                                <Input
+                                  type="number"
+                                  {...form.register('centerPostDepth', { valueAsNumber: true })}
+                                  className="text-sm pr-8"
+                                  placeholder="Depth"
+                                />
+                                <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs text-slate-600">Front Laminate</Label>
+                              <Select
+                                value={watchedValues.centerPostFrontLaminateCode || watchedValues.frontLaminateCode || ''}
+                                onValueChange={(value) => form.setValue('centerPostFrontLaminateCode', value)}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Select laminate" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {laminateMemoryData.map((laminate) => (
+                                    <SelectItem key={laminate.id} value={laminate.code}>
+                                      {laminate.code}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
+                              <Select
+                                value={watchedValues.centerPostInnerLaminateCode || watchedValues.innerLaminateCode || ''}
+                                onValueChange={(value) => form.setValue('centerPostInnerLaminateCode', value)}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Select laminate" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {laminateMemoryData.map((laminate) => (
+                                    <SelectItem key={laminate.id} value={laminate.code}>
+                                      {laminate.code}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                form.setValue('centerPostHeight', watchedValues.height - 36);
+                                form.setValue('centerPostDepth', watchedValues.depth - 20);
+                              }}
+                              className="h-8 px-3 text-xs w-full"
+                            >
+                              Reset Dimensions
+                            </Button>
                           </div>
                         )}
                       </div>
