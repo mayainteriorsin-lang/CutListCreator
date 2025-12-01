@@ -606,9 +606,9 @@ export default function Home() {
       shutterLaminateCode: storedMemory.shutterLaminateCode ?? '',
       shutterInnerLaminateCode: storedMemory.shutterInnerLaminateCode ?? '',
       topPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
-      bottomPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
-      leftPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
-      rightPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
+      bottomPanelLaminateCode: storedMemory.bottomPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
+      leftPanelLaminateCode: storedMemory.leftPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
+      rightPanelLaminateCode: storedMemory.rightPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
       backPanelLaminateCode: storedMemory.backPanelLaminateCode ?? '',
       topPanelInnerLaminateCode: 'off white',
       bottomPanelInnerLaminateCode: 'off white',
@@ -2869,11 +2869,14 @@ export default function Home() {
       });
     }
     
-    // Save cabinet memory for Advanced mode auto-fill
+    // Save cabinet memory for Advanced mode auto-fill (ALL panel laminate codes)
     if (mode === 'advanced' && (cabinet.A || cabinet.topPanelLaminateCode)) {
       saveCabinetFormMemory({
         A: cabinet.A,
         topPanelLaminateCode: cabinet.topPanelLaminateCode,
+        bottomPanelLaminateCode: cabinet.bottomPanelLaminateCode,
+        leftPanelLaminateCode: cabinet.leftPanelLaminateCode,
+        rightPanelLaminateCode: cabinet.rightPanelLaminateCode,
         backPanelLaminateCode: cabinet.backPanelLaminateCode,
         height: cabinet.height,
         width: cabinet.width,
@@ -2941,9 +2944,9 @@ export default function Home() {
       shutterInnerLaminateCode: shutterMemory?.shutterInnerLaminateCode || '',  // ✅ Keep inner laminate
       A: cabinetMemory.A ?? 'Apple Ply 16mm BWP',
       topPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
-      bottomPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
-      leftPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
-      rightPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
+      bottomPanelLaminateCode: cabinetMemory.bottomPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
+      leftPanelLaminateCode: cabinetMemory.leftPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
+      rightPanelLaminateCode: cabinetMemory.rightPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
       backPanelLaminateCode: cabinetMemory.backPanelLaminateCode ?? '',
       topPanelInnerLaminateCode: 'off white',
       bottomPanelInnerLaminateCode: 'off white',
