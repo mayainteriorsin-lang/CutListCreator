@@ -50,14 +50,14 @@ export function calculateGaddiLineDirection(panel: GaddiPanel): GaddiLineConfig 
   if (type.includes('LEFT') || type.includes('RIGHT')) {
     // LEFT/RIGHT: Always mark HEIGHT (nomH)
     markDimension = 'height';
-    // Detect which axis nomH is on: if h ≈ nomH, it's on Y-axis; otherwise X-axis
-    sheetAxis = Math.abs(h - nomH) < 0.5 ? 'y' : 'x';
+    // Detect which axis nomH is on: if w ≈ nomH, it's on X-axis; otherwise Y-axis
+    sheetAxis = Math.abs(w - nomH) < 0.5 ? 'x' : 'y';
     
   } else if (type.includes('TOP') || type.includes('BOTTOM')) {
     // TOP/BOTTOM: Always mark WIDTH (nomW)
     markDimension = 'width';
-    // Detect which axis nomW is on: if h ≈ nomW, it's on Y-axis; otherwise X-axis
-    sheetAxis = Math.abs(h - nomW) < 0.5 ? 'y' : 'x';
+    // Detect which axis nomW is on: if w ≈ nomW, it's on X-axis; otherwise Y-axis
+    sheetAxis = Math.abs(w - nomW) < 0.5 ? 'x' : 'y';
     
   } else {
     // Default: mark HEIGHT on Y-axis
