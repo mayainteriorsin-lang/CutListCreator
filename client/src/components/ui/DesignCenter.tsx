@@ -69,6 +69,7 @@ export default function DesignCenter() {
   const [dimensionStart, setDimensionStart] = useState<{ x: number; y: number } | null>(null);
   const [widthValue, setWidthValue] = useState(200);
   const [widthReduction, setWidthReduction] = useState(36);
+  const calculatedWidth = widthValue - widthReduction;
   
   const SNAP = (v: number) => Math.round(v / gridSize) * gridSize;
   const getAngle = (x1: number, y1: number, x2: number, y2: number) => Math.round(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI) % 360;
@@ -854,7 +855,10 @@ export default function DesignCenter() {
               Coords
             </label>
           </span>
-          <span style={{ marginLeft: "auto", fontSize: 10, color: "#777" }}>
+          <span style={{ marginLeft: "auto", fontSize: 10, color: "#777", display: "flex", gap: 16, alignItems: "center" }}>
+            <span style={{ fontWeight: "bold", color: "#0b7a6b", backgroundColor: "#e9fbf7", padding: "2px 8px", borderRadius: 3 }}>
+              Inner Width: {calculatedWidth} mm
+            </span>
             🔍 Zoom: {(zoom * 100).toFixed(0)}% | {mode === "line" && angleSnap && "⚡ Angle snap ON"}
           </span>
         </div>
