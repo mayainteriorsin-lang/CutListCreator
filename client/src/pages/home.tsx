@@ -1823,12 +1823,10 @@ export default function Home() {
     for (const panel of panels) {
       const hasFrontCode = !!(panel.frontCode && panel.frontCode.trim());
       const hasInnerCode = !!(panel.innerCode && panel.innerCode.trim());
-      const isFrontUserSelected = trackingSet.has(panel.frontField);
-      const isInnerUserSelected = trackingSet.has(panel.innerField);
       
-      // Require BOTH a value AND user selection (not just auto-filled defaults)
-      const missingFront = !hasFrontCode || !isFrontUserSelected;
-      const missingInner = !hasInnerCode || !isInnerUserSelected;
+      // Only require values to exist (defaults are now acceptable)
+      const missingFront = !hasFrontCode;
+      const missingInner = !hasInnerCode;
       
       if (missingFront || missingInner) {
         details.push({
