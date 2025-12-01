@@ -7849,12 +7849,12 @@ export default function Home() {
                                           />
                                           {/* GADDI Text Label - positioned along the dotted line */}
                                           {drawHorizontal ? (
-                                            // Horizontal line at top: text centered on X-axis, just below the line
+                                            // Horizontal line at top: text centered on X-axis, right on the line
                                             <div
-                                              className="absolute text-[9px] font-bold text-red-600"
+                                              className="absolute text-[8px] font-bold text-black"
                                               style={{
                                                 left: '50%',
-                                                top: '4px',
+                                                top: '0px',
                                                 transform: 'translateX(-50%)'
                                               }}
                                             >
@@ -7863,9 +7863,9 @@ export default function Home() {
                                           ) : (
                                             // Vertical line at left: text rotated 90deg along Y-axis
                                             <div
-                                              className="absolute text-[9px] font-bold text-red-600"
+                                              className="absolute text-[8px] font-bold text-black"
                                               style={{
-                                                left: '4px',
+                                                left: '0px',
                                                 top: '50%',
                                                 transform: 'translateY(-50%) rotate(-90deg)',
                                                 whiteSpace: 'nowrap'

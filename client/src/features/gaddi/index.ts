@@ -154,16 +154,15 @@ export function drawGaddiMark(
     const isHorizontal = Math.abs(p1.x - p0.x) > Math.abs(p1.y - p0.y);
     
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
-    doc.setTextColor(255, 0, 0); // Red color to match line
+    doc.setFontSize(6);
+    doc.setTextColor(0, 0, 0); // Black color
     
     if (isHorizontal) {
-      // Horizontal line: text centered on X-axis, just below the line
-      doc.text("GADDI", midX, midY + 3, { align: "center" });
+      // Horizontal line: text centered on X-axis, right on the line
+      doc.text("GADDI", midX, midY + 1.5, { align: "center" });
     } else {
-      // Vertical line: text rotated 90deg along Y-axis
-      // jsPDF uses angle option directly (no saveGraphicsState needed)
-      doc.text("GADDI", midX + 3, midY, { align: "center", angle: 90 });
+      // Vertical line: text rotated 90deg along Y-axis, close to line
+      doc.text("GADDI", midX + 1.5, midY, { align: "center", angle: 90 });
     }
     
     // Reset text color
