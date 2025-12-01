@@ -1127,25 +1127,21 @@ export default function Home() {
     if (source !== 'top') {
       updateLaminateWithTracking('topPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('topPanelInnerLaminateCode');
-      setLaminateSelection(newValue);
       form.setValue('topPanelGrainDirection', woodGrainsEnabled);
     }
     if (source !== 'bottom') {
       updateLaminateWithTracking('bottomPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('bottomPanelInnerLaminateCode');
-      setBottomLaminateSelection(newValue);
       form.setValue('bottomPanelGrainDirection', woodGrainsEnabled);
     }
     if (source !== 'left') {
       updateLaminateWithTracking('leftPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('leftPanelInnerLaminateCode');
-      setLeftLaminateSelection(newValue);
       form.setValue('leftPanelGrainDirection', woodGrainsEnabled);
     }
     if (source !== 'right') {
       updateLaminateWithTracking('rightPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('rightPanelInnerLaminateCode');
-      setRightLaminateSelection(newValue);
       form.setValue('rightPanelGrainDirection', woodGrainsEnabled);
     }
     
@@ -1176,11 +1172,6 @@ export default function Home() {
       form.setValue('rightPanelLaminateCode', newValue);
       form.setValue('backPanelLaminateCode', newValue);
     }
-    
-    setLaminateSelection(newValue);
-    setBottomLaminateSelection(newValue);
-    setLeftLaminateSelection(newValue);
-    setRightLaminateSelection(newValue);
     
     setTimeout(() => {
       currentSyncOrigin.current = null;
@@ -1252,12 +1243,6 @@ export default function Home() {
     form.setValue('rightPanelLaminateCode', newCode);
     form.setValue('backPanelLaminateCode', newCode);
     form.setValue('shutterLaminateCode', newCode);
-    // Update selection states
-    setLaminateSelection(newCode);
-    setBottomLaminateSelection(newCode);
-    setLeftLaminateSelection(newCode);
-    setRightLaminateSelection(newCode);
-    setBackLaminateSelection(newCode);
   };
 
   // Master Settings: Update ALL cabinets when master inner laminate code changes
@@ -1529,22 +1514,18 @@ export default function Home() {
       if (globalLaminateMemory.includes(newOption)) {
         // Set the dropdown selection to show the existing option
         if (panelType === 'top') {
-          setLaminateSelection(newOption);
           form.setValue('topPanelLaminateCode', newOption);
           setSaveStatus('ready');
           setTimeout(() => setSaveStatus(''), 2000);
         } else if (panelType === 'bottom') {
-          setBottomLaminateSelection(newOption);
           form.setValue('bottomPanelLaminateCode', newOption);
           setBottomSaveStatus('ready');
           setTimeout(() => setBottomSaveStatus(''), 2000);
         } else if (panelType === 'left') {
-          setLeftLaminateSelection(newOption);
           form.setValue('leftPanelLaminateCode', newOption);
           setLeftSaveStatus('ready');
           setTimeout(() => setLeftSaveStatus(''), 2000);
         } else if (panelType === 'right') {
-          setRightLaminateSelection(newOption);
           form.setValue('rightPanelLaminateCode', newOption);
           setRightSaveStatus('ready');
           setTimeout(() => setRightSaveStatus(''), 2000);
@@ -1563,22 +1544,18 @@ export default function Home() {
         
         // Set the dropdown selection to show the newly saved option
         if (panelType === 'top') {
-          setLaminateSelection(newOption);
           form.setValue('topPanelLaminateCode', newOption);
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus(''), 2000);
         } else if (panelType === 'bottom') {
-          setBottomLaminateSelection(newOption);
           form.setValue('bottomPanelLaminateCode', newOption);
           setBottomSaveStatus('saved');
           setTimeout(() => setBottomSaveStatus(''), 2000);
         } else if (panelType === 'left') {
-          setLeftLaminateSelection(newOption);
           form.setValue('leftPanelLaminateCode', newOption);
           setLeftSaveStatus('saved');
           setTimeout(() => setLeftSaveStatus(''), 2000);
         } else if (panelType === 'right') {
-          setRightLaminateSelection(newOption);
           form.setValue('rightPanelLaminateCode', newOption);
           setRightSaveStatus('saved');
           setTimeout(() => setRightSaveStatus(''), 2000);
@@ -1608,7 +1585,6 @@ export default function Home() {
       // Check if option already exists in global memory
       if (globalLaminateMemory.includes(newOption)) {
         // Set the dropdown selection to show the existing option
-        setBackLaminateSelection(newOption);
         form.setValue('backPanelLaminateCode', newOption);
         setBackSaveStatus('ready');
         setTimeout(() => setBackSaveStatus(''), 2000);
@@ -1617,7 +1593,6 @@ export default function Home() {
         saveLaminateCodeMutation.mutate(newOption);
         
         // Set the dropdown selection to show the newly saved option
-        setBackLaminateSelection(newOption);
         form.setValue('backPanelLaminateCode', newOption);
         setBackSaveStatus('saved');
         setTimeout(() => setBackSaveStatus(''), 2000);
