@@ -36,20 +36,20 @@ export function calculateGaddiLineDirection(panel: GaddiPanel): GaddiLineConfig 
   let lineDirection: string;
   
   if (type.includes('LEFT') || type.includes('RIGHT')) {
-    // LEFT/RIGHT: Mark nomH only (300)
+    // LEFT/RIGHT: Mark nomH only (300), line along X-axis
     markValue = nomH;
-    lineDirection = 'y';
-    console.log(`🔴 ${type}: Mark nomH=${nomH}`);
+    lineDirection = 'x';
+    console.log(`🔴 ${type}: Mark nomH=${nomH}, X-axis`);
     
   } else if (type.includes('TOP') || type.includes('BOTTOM')) {
-    // TOP/BOTTOM: Mark nomW only (200)
+    // TOP/BOTTOM: Mark nomW only (200), line along Y-axis
     markValue = nomW;
-    lineDirection = 'x';
-    console.log(`🔵 ${type}: Mark nomW=${nomW}`);
+    lineDirection = 'y';
+    console.log(`🔵 ${type}: Mark nomW=${nomW}, Y-axis`);
     
   } else {
     markValue = nomH;
-    lineDirection = 'y';
+    lineDirection = 'x';
   }
   
   return {
