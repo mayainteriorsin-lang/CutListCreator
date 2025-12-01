@@ -7713,15 +7713,26 @@ export default function Home() {
                                 const w = panel.w * scale;
                                 const h = panel.h * scale;
                                 
-                                const panelName = panel.id.toUpperCase().includes('CENTER POST') ? 'CENTER POST' :
-                                                 panel.id.toUpperCase().includes('SHELF') ? 'SHELF' :
-                                                 panel.id.toUpperCase().includes('LEFT') ? 'LEFT' :
-                                                 panel.id.toUpperCase().includes('RIGHT') ? 'RIGHT' :
-                                                 panel.id.toUpperCase().includes('TOP') ? 'TOP' :
-                                                 panel.id.toUpperCase().includes('BOTTOM') ? 'BOTTOM' :
-                                                 panel.id.toUpperCase().includes('BACK') ? 'BACK' :
-                                                 panel.id.toUpperCase().includes('SHUTTER') ? 'SHUTTER' : 
+                                // Use panel.name for detection (has actual names like "Cabinet - Shutter 1")
+                                // Fallback to panel.id if name not available
+                                const nameSource = (panel.name || panel.id || '').toUpperCase();
+                                
+                                // Extract shutter label if present (e.g., "Shutter 1" from "Cabinet Name - Shutter 1")
+                                const shutterMatch = (panel.name || '').match(/Shutter\s*\d*/i);
+                                const shutterLabel = shutterMatch ? shutterMatch[0].toUpperCase() : null;
+                                
+                                const panelName = nameSource.includes('CENTER POST') ? 'CENTER POST' :
+                                                 nameSource.includes('SHELF') ? 'SHELF' :
+                                                 nameSource.includes('LEFT') ? 'LEFT' :
+                                                 nameSource.includes('RIGHT') ? 'RIGHT' :
+                                                 nameSource.includes('TOP') ? 'TOP' :
+                                                 nameSource.includes('BOTTOM') ? 'BOTTOM' :
+                                                 nameSource.includes('BACK') ? 'BACK' :
+                                                 shutterLabel ? shutterLabel : 
                                                  panel.id;
+                                
+                                // Check if this is a shutter panel for intelligent positioning
+                                const isShutterPanel = !!shutterLabel;
                                 
                                 const isGaddi = panel.gaddi === true;
                                 
@@ -7757,7 +7768,7 @@ export default function Home() {
                                     {panel.w >= 200 && panel.h >= 200 && (
                                       <>
                                         {/* Panel name - Smart positioning for SHUTTER panels */}
-                                        {panelName === 'SHUTTER' ? (
+                                        {isShutterPanel ? (
                                           // SHUTTER label: place along the height axis
                                           h >= w ? (
                                             // Height on Y-axis (portrait): rotate label vertically on right side
