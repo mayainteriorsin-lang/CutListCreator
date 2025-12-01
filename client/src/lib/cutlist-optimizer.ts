@@ -107,6 +107,7 @@ class MaxRectsBin {
       w: best.rect.w - this.kerf,
       h: best.rect.h - this.kerf,
       rotated: false,
+      rotateAllowed: false,
       gaddi: !!piece.gaddi,
       laminateCode: piece.laminateCode || '',
       nomW: (piece as any).nomW || piece.w,
