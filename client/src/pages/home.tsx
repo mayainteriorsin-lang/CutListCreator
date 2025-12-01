@@ -7756,18 +7756,51 @@ export default function Home() {
                                     {/* Only show panel name on panels >= 200mm in both dimensions */}
                                     {panel.w >= 200 && panel.h >= 200 && (
                                       <>
-                                        {/* Panel name - Bottom Center - Responsive font size */}
-                                        <p 
-                                          className="absolute font-bold uppercase"
-                                          style={{
-                                            left: '50%',
-                                            bottom: '2px',
-                                            transform: 'translateX(-50%)',
-                                            fontSize: `${Math.max(9, Math.min(16, w / 10, h / 6))}px`
-                                          }}
-                                        >
-                                          {panelName}
-                                        </p>
+                                        {/* Panel name - Smart positioning for SHUTTER panels */}
+                                        {panelName === 'SHUTTER' ? (
+                                          // SHUTTER label: place along the height axis
+                                          h >= w ? (
+                                            // Height on Y-axis (portrait): rotate label vertically on right side
+                                            <p 
+                                              className="absolute font-bold uppercase"
+                                              style={{
+                                                right: '4px',
+                                                top: '50%',
+                                                transform: 'translateY(-50%) rotate(90deg)',
+                                                transformOrigin: 'center center',
+                                                fontSize: `${Math.max(9, Math.min(16, h / 10, w / 6))}px`
+                                              }}
+                                            >
+                                              {panelName}
+                                            </p>
+                                          ) : (
+                                            // Height on X-axis (landscape): label horizontal at bottom
+                                            <p 
+                                              className="absolute font-bold uppercase"
+                                              style={{
+                                                left: '50%',
+                                                bottom: '2px',
+                                                transform: 'translateX(-50%)',
+                                                fontSize: `${Math.max(9, Math.min(16, w / 10, h / 6))}px`
+                                              }}
+                                            >
+                                              {panelName}
+                                            </p>
+                                          )
+                                        ) : (
+                                          // Other panels: standard bottom center positioning
+                                          <p 
+                                            className="absolute font-bold uppercase"
+                                            style={{
+                                              left: '50%',
+                                              bottom: '2px',
+                                              transform: 'translateX(-50%)',
+                                              fontSize: `${Math.max(9, Math.min(16, w / 10, h / 6))}px`
+                                            }}
+                                          >
+                                            {panelName}
+                                          </p>
+                                        )}
                                         
                                         {/* Wood Grain Indicator - Only when wood grains enabled - Bottom Center, above panel name */}
                                         {panel.grainDirection === true && (
