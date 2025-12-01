@@ -7717,18 +7717,19 @@ export default function Home() {
                                 // Fallback to panel.id if name not available
                                 const nameSource = (panel.name || panel.id || '').toUpperCase();
                                 
-                                // Extract shutter label if present (e.g., "Shutter 1" from "Cabinet Name - Shutter 1")
+                                // First check if panel has shutterLabel from optimizer (most reliable)
+                                // Otherwise extract shutter label from name (e.g., "Shutter 1" from "Cabinet Name - Shutter 1")
                                 const shutterMatch = (panel.name || '').match(/Shutter\s*\d*/i);
-                                const shutterLabel = shutterMatch ? shutterMatch[0].toUpperCase() : null;
+                                const shutterLabel = panel.shutterLabel || (shutterMatch ? shutterMatch[0].toUpperCase() : null);
                                 
                                 const panelName = nameSource.includes('CENTER POST') ? 'CENTER POST' :
                                                  nameSource.includes('SHELF') ? 'SHELF' :
+                                                 shutterLabel ? shutterLabel :
                                                  nameSource.includes('LEFT') ? 'LEFT' :
                                                  nameSource.includes('RIGHT') ? 'RIGHT' :
                                                  nameSource.includes('TOP') ? 'TOP' :
                                                  nameSource.includes('BOTTOM') ? 'BOTTOM' :
                                                  nameSource.includes('BACK') ? 'BACK' :
-                                                 shutterLabel ? shutterLabel : 
                                                  panel.id;
                                 
                                 // Check if this is a shutter panel for intelligent positioning

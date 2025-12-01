@@ -37,7 +37,8 @@ export interface OptimizerPart {
   gaddi: boolean;    // GADDI marking flag
   laminateCode: string;
   woodGrainsEnabled?: boolean; // Per-laminate wood grain setting
-  panelType?: string;         // Panel type (TOP, BOTTOM, LEFT, RIGHT, BACK)
+  panelType?: string;         // Panel type (TOP, BOTTOM, LEFT, RIGHT, BACK, SHUTTER)
+  shutterLabel?: string;      // Shutter display label (e.g., "SHUTTER 1")
   axisLockReason?: string;    // Axis constraint when grains enabled
   originalPanel: Panel;       // Reference to original panel
 }

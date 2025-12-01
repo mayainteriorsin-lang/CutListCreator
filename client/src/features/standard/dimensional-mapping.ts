@@ -22,20 +22,38 @@ const panelCounters: Record<string, number> = {
   BOTTOM: 0,
   LEFT: 0,
   RIGHT: 0,
-  BACK: 0
+  BACK: 0,
+  SHUTTER: 0,
+  CENTER_POST: 0,
+  SHELF: 0
 };
 
 /**
  * Detect panel type from name
+ * Also extracts shutter number if present (e.g., "Shutter 1" -> "SHUTTER_1")
  */
-function getPanelType(name: string): string {
+function getPanelType(name: string): { type: string; shutterLabel?: string } {
   const lower = name.toLowerCase();
-  if (lower.includes('top')) return 'TOP';
-  if (lower.includes('bottom')) return 'BOTTOM';
-  if (lower.includes('left')) return 'LEFT';
-  if (lower.includes('right')) return 'RIGHT';
-  if (lower.includes('back')) return 'BACK';
-  return 'PANEL';
+  
+  // Check for shutter with number (e.g., "Cabinet - Shutter 1")
+  const shutterMatch = name.match(/shutter\s*(\d+)/i);
+  if (shutterMatch) {
+    return { type: 'SHUTTER', shutterLabel: `SHUTTER ${shutterMatch[1]}` };
+  }
+  
+  // Check for shutter without number
+  if (lower.includes('shutter')) {
+    return { type: 'SHUTTER', shutterLabel: 'SHUTTER' };
+  }
+  
+  if (lower.includes('center post')) return { type: 'CENTER_POST' };
+  if (lower.includes('shelf')) return { type: 'SHELF' };
+  if (lower.includes('top')) return { type: 'TOP' };
+  if (lower.includes('bottom')) return { type: 'BOTTOM' };
+  if (lower.includes('left')) return { type: 'LEFT' };
+  if (lower.includes('right')) return { type: 'RIGHT' };
+  if (lower.includes('back')) return { type: 'BACK' };
+  return { type: 'PANEL' };
 }
 
 /**
@@ -77,8 +95,10 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
   panels.forEach((panel, idx) => {
     const name = String(panel.name ?? panel.id ?? `panel-${idx}`);
     
-    // Get panel type first
-    const panelType = getPanelType(name);
+    // Get panel type info (includes shutter label if applicable)
+    const panelTypeInfo = getPanelType(name);
+    const panelType = panelTypeInfo.type;
+    const shutterLabel = panelTypeInfo.shutterLabel;
     
     // READ VALUES based on panel type
     // TOP/BOTTOM: nomW=cabinet.width, nomH=cabinet.depth
@@ -92,7 +112,7 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
       return;
     }
     
-    // Generate unique ID
+    // Generate unique ID - include shutter label for display purposes
     panelCounters[panelType] = (panelCounters[panelType] ?? 0) + 1;
     const uniqueId = `${panelType}_${panelCounters[panelType]}_${panel.id ?? idx}`;
     
@@ -134,6 +154,7 @@ export function prepareStandardParts(panels: Panel[], woodGrainsPreferences: Rec
       gaddi: panel.gaddi === true,
       laminateCode,
       panelType,
+      shutterLabel,  // Include shutter label for display
       woodGrainsEnabled,
       originalPanel: panel
     };
