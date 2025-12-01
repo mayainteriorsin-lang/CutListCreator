@@ -1880,7 +1880,8 @@ export default function Home() {
     
     // Get plywood types (default to Apple Ply 16mm BWP if not set)
     const A = cabinet.A || 'Apple Ply 16mm BWP';
-    const backPanelPlywoodBrand = cabinet.A || A;
+    // Back panel uses dedicated thinner plywood (default: 6 mm bwp)
+    const backPanelPlywoodBrand = (cabinet as any).backPanelPlywoodBrand || '6 mm bwp';
     
     // Pre-compose laminate codes for dynamic grain direction checks
     const topLaminateCode = composeLaminateCode(
