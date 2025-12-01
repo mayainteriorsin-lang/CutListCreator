@@ -112,11 +112,16 @@ function computeDisplayDims(panel: any) {
 }
 
 // Save cabinet form values to localStorage (with SSR safety)
-const saveCabinetFormMemory = (values: CabinetFormMemory) => {
+// ✅ FIX: Merge with existing memory to prevent overwriting unrelated fields
+const saveCabinetFormMemory = (values: Partial<CabinetFormMemory>) => {
   if (typeof window === 'undefined') return;
   
   try {
-    localStorage.setItem(CABINET_FORM_MEMORY_KEY, JSON.stringify(values));
+    // Load existing memory first
+    const existingMemory = loadCabinetFormMemory();
+    // Merge new values with existing memory (new values override old ones)
+    const mergedMemory = { ...existingMemory, ...values };
+    localStorage.setItem(CABINET_FORM_MEMORY_KEY, JSON.stringify(mergedMemory));
   } catch (error) {
     console.error('Failed to save cabinet form memory:', error);
   }
@@ -584,6 +589,7 @@ export default function Home() {
       name: `Shutter #${cabinets.length + 1}`,
       type: 'single',
       configurationMode: 'advanced', // ✅ FIX: Initialize form with configurationMode
+      roomName: storedMemory.roomName ?? 'Kitchen',
       height: storedMemory.height ?? 800,
       width: storedMemory.width ?? 600,
       depth: storedMemory.depth ?? 450,
@@ -591,10 +597,12 @@ export default function Home() {
       centerPostQuantity: 1,
       centerPostHeight: 764,
       centerPostDepth: 430,
-      centerPostLaminateCode: '',
+      centerPostLaminateCode: storedMemory.centerPostLaminateCode ?? '',
+      centerPostInnerLaminateCode: storedMemory.centerPostInnerLaminateCode ?? 'off white',
       shelvesQuantity: 1,
       shelvesEnabled: false,
-      shelvesLaminateCode: '',
+      shelvesLaminateCode: storedMemory.shelvesLaminateCode ?? '',
+      shelvesInnerLaminateCode: storedMemory.shelvesInnerLaminateCode ?? 'off white',
       widthReduction: storedMemory.widthReduction ?? 36,
 
       shuttersEnabled: false,
@@ -610,13 +618,13 @@ export default function Home() {
       leftPanelLaminateCode: storedMemory.leftPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
       rightPanelLaminateCode: storedMemory.rightPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
       backPanelLaminateCode: storedMemory.backPanelLaminateCode ?? '',
-      topPanelInnerLaminateCode: 'off white',
-      bottomPanelInnerLaminateCode: 'off white',
-      leftPanelInnerLaminateCode: 'off white',
-      rightPanelInnerLaminateCode: 'off white',
-      backPanelInnerLaminateCode: 'off white',
+      topPanelInnerLaminateCode: storedMemory.topPanelInnerLaminateCode ?? 'off white',
+      bottomPanelInnerLaminateCode: storedMemory.bottomPanelInnerLaminateCode ?? 'off white',
+      leftPanelInnerLaminateCode: storedMemory.leftPanelInnerLaminateCode ?? 'off white',
+      rightPanelInnerLaminateCode: storedMemory.rightPanelInnerLaminateCode ?? 'off white',
+      backPanelInnerLaminateCode: storedMemory.backPanelInnerLaminateCode ?? 'off white',
       A: storedMemory.A ?? 'Apple Ply 16mm BWP',
-      innerLaminateCode: 'off white',
+      innerLaminateCode: storedMemory.topPanelInnerLaminateCode ?? 'off white',
       // Grain direction fields - default to false for new forms
       topPanelGrainDirection: false,
       bottomPanelGrainDirection: false,
