@@ -35,31 +35,28 @@ export function shouldShowGaddiMarking(panel: GaddiPanel): boolean {
 /**
  * Calculate which dimension GADDI marks and which axis to draw on
  * 
- * LEFT/RIGHT: Always mark HEIGHT (nomH)
- * TOP/BOTTOM: Always mark WIDTH (nomW)
+ * SIMPLE RULES (NO ROTATION):
+ * - LEFT/RIGHT: Always mark HEIGHT (nomH) on Y-axis (VERTICAL line)
+ * - TOP/BOTTOM: Always mark WIDTH (nomW) on X-axis (HORIZONTAL line)
  * 
- * Then detect which axis that dimension is on in the sheet placement
+ * Sheet: X-axis=1210mm (horizontal), Y-axis=2420mm (vertical)
  */
 export function calculateGaddiLineDirection(panel: GaddiPanel): GaddiLineConfig {
-  const { panelType, nomW, nomH, w, h } = panel;
+  const { panelType } = panel;
   const type = (panelType || '').toUpperCase();
   
   let markDimension: 'width' | 'height';
   let sheetAxis: 'x' | 'y';
   
   if (type.includes('LEFT') || type.includes('RIGHT')) {
-    // LEFT/RIGHT: Always mark HEIGHT (nomH)
+    // LEFT/RIGHT: Mark HEIGHT on Y-axis (VERTICAL line)
     markDimension = 'height';
-    // Detect which axis nomH is on: if w ≈ nomH, it's on X-axis; otherwise Y-axis
-    sheetAxis = Math.abs(w - nomH) < 0.5 ? 'x' : 'y';
-    console.log(`🔴 ${type} - Mark HEIGHT(${nomH}), w=${w}, h=${h}, axis=${sheetAxis}`);
+    sheetAxis = 'y';
     
   } else if (type.includes('TOP') || type.includes('BOTTOM')) {
-    // TOP/BOTTOM: Always mark WIDTH (nomW)
+    // TOP/BOTTOM: Mark WIDTH on X-axis (HORIZONTAL line)
     markDimension = 'width';
-    // Detect which axis nomW is on: if w ≈ nomW, it's on X-axis; otherwise Y-axis
-    sheetAxis = Math.abs(w - nomW) < 0.5 ? 'x' : 'y';
-    console.log(`🔵 ${type} - Mark WIDTH(${nomW}), w=${w}, h=${h}, axis=${sheetAxis}`);
+    sheetAxis = 'x';
     
   } else {
     // Default: mark HEIGHT on Y-axis
