@@ -679,8 +679,11 @@ export default function Home() {
   const topPanelLaminateCode = form.watch('topPanelLaminateCode');
   const topPanelInnerLaminateCode = form.watch('topPanelInnerLaminateCode');
   const bottomPanelLaminateCode = form.watch('bottomPanelLaminateCode');
+  const bottomPanelInnerLaminateCode = form.watch('bottomPanelInnerLaminateCode');
   const leftPanelLaminateCode = form.watch('leftPanelLaminateCode');
+  const leftPanelInnerLaminateCode = form.watch('leftPanelInnerLaminateCode');
   const rightPanelLaminateCode = form.watch('rightPanelLaminateCode');
+  const rightPanelInnerLaminateCode = form.watch('rightPanelInnerLaminateCode');
   const backPanelLaminateCode = form.watch('backPanelLaminateCode');
   const shutterLaminateCode = form.watch('shutterLaminateCode');
   const A = form.watch('A');
@@ -3021,8 +3024,6 @@ export default function Home() {
         rightPanelLaminateCode: cabinetMemory.rightPanelLaminateCode ?? '',
         backPanelLaminateCode: cabinetMemory.backPanelLaminateCode ?? '',
         shutterLaminateCode: cabinetMemory.shutterLaminateCode ?? '',
-        centerPostLaminateCode: cabinetMemory.centerPostLaminateCode ?? '',
-        shelvesLaminateCode: cabinetMemory.shelvesLaminateCode ?? '',
         topPanelInnerLaminateCode: cabinetMemory.topPanelInnerLaminateCode ?? 'off white',
         bottomPanelInnerLaminateCode: cabinetMemory.bottomPanelInnerLaminateCode ?? 'off white',
         leftPanelInnerLaminateCode: cabinetMemory.leftPanelInnerLaminateCode ?? 'off white',
