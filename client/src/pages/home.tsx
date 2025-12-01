@@ -7694,7 +7694,7 @@ export default function Home() {
                                       );
                                     })()}
                                     
-                                    {/* GADDI Dotted Line - Red marking for nomW (TOP/BOTTOM) or nomH (LEFT/RIGHT) */}
+                                    {/* GADDI Dotted Line - Red marking in CENTER */}
                                     {isGaddi && (() => {
                                       const type = panelName.toUpperCase();
                                       const isLeft = type.includes('LEFT');
@@ -7709,15 +7709,14 @@ export default function Home() {
                                         <div 
                                           className="absolute"
                                           style={{ 
-                                            left: isTopBottom ? '2px' : (isLeft ? '2px' : 'auto'),
+                                            left: isTopBottom ? '2px' : '50%',
                                             top: isTopBottom ? '2px' : '2px',
-                                            right: isRight ? '2px' : (isTopBottom ? '2px' : 'auto'),
-                                            bottom: isBottom ? '2px' : (isTopBottom ? 'auto' : '2px'),
+                                            right: isTopBottom ? '2px' : 'auto',
                                             width: isTopBottom ? 'calc(100% - 4px)' : '0px',
                                             height: isTopBottom ? '0px' : 'calc(100% - 4px)',
                                             borderTop: isTopBottom ? '2px dotted #FF0000' : 'none',
-                                            borderRight: isRight ? '2px dotted #FF0000' : 'none',
-                                            borderLeft: isLeft ? '2px dotted #FF0000' : 'none'
+                                            borderLeft: !isTopBottom ? '2px dotted #FF0000' : 'none',
+                                            transform: !isTopBottom ? 'translateX(-50%)' : 'none'
                                           }}
                                           title={`GADDI: Mark ${isTopBottom ? 'Width (nomW)' : 'Height (nomH)'}`}
                                         />
