@@ -1768,12 +1768,15 @@ export default function Home() {
   // Calculate panel dimensions - Apply width reduction to top/bottom panels for optimizer
   const calculatePanelDimensions = (cabinet: Cabinet) => {
     const calculatedWidth = cabinet.width - (cabinet.widthReduction ?? 36);
+    // Back panel reduction: use 0 for actual dimensions, otherwise apply the reduction value
+    const backWidthReduction = cabinet.backPanelWidthReduction ?? 20;
+    const backHeightReduction = cabinet.backPanelHeightReduction ?? 20;
     return {
       top: { width: calculatedWidth, height: cabinet.depth, thickness: 18 },
       bottom: { width: calculatedWidth, height: cabinet.depth, thickness: 18 },
       left: { width: cabinet.depth, height: cabinet.height, thickness: 18 },
       right: { width: cabinet.depth, height: cabinet.height, thickness: 18 },
-      back: { width: cabinet.width, height: cabinet.height, thickness: 18 }
+      back: { width: cabinet.width - backWidthReduction, height: cabinet.height - backHeightReduction, thickness: 18 }
     };
   };
 
