@@ -448,7 +448,7 @@ export function generateCutlistPDF({
         doc.setTextColor(0); // Reset to black
       }
       
-      // GADDI Dotted Line - Simple & Clean
+      // GADDI Dotted Line - Follows the dimension being marked
       if ((panel as any).gaddi === true) {
         const gaddiPanel: GaddiPanel = {
           panelType: panelName,
@@ -466,21 +466,22 @@ export function generateCutlistPDF({
           doc.setDrawColor(lineConfig.color);
           (doc as any).setLineDash(lineConfig.dashPattern);
           
-          if (lineConfig.sheetAxis === 'x') {
-            // Horizontal dotted line
-            doc.line(
-              x + lineConfig.inset,
-              y + lineConfig.inset,
-              x + w - lineConfig.inset,
-              y + lineConfig.inset
-            );
-          } else {
-            // Vertical dotted line
+          // Draw line along the dimension being marked
+          if (panelName.includes('LEFT') || panelName.includes('RIGHT')) {
+            // LEFT/RIGHT: Line runs along the height dimension
             doc.line(
               x + lineConfig.inset,
               y + lineConfig.inset,
               x + lineConfig.inset,
               y + h - lineConfig.inset
+            );
+          } else if (panelName.includes('TOP') || panelName.includes('BOTTOM')) {
+            // TOP/BOTTOM: Line runs along the width dimension
+            doc.line(
+              x + lineConfig.inset,
+              y + lineConfig.inset,
+              x + w - lineConfig.inset,
+              y + lineConfig.inset
             );
           }
           
