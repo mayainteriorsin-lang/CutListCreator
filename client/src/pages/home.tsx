@@ -1048,7 +1048,7 @@ export default function Home() {
   const [customShutterSaveStatus, setCustomShutterSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for Back Panel Plywood Brand selection
-  const [backPanelPlywoodSelection, setBackPanelPlywoodSelection] = useState('');
+  const [backPanelPlywoodSelection, setBackPanelPlywoodSelection] = useState('6 mm bwp');
   const [backPanelPlywoodInput, setBackPanelPlywoodInput] = useState('');
   const [backPanelPlywoodSaveStatus, setBackPanelPlywoodSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
