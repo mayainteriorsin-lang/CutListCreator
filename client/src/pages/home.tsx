@@ -1992,7 +1992,8 @@ export default function Home() {
     
     // Get plywood types (default to Apple Ply 16mm BWP if not set)
     const A = cabinet.A || 'Apple Ply 16mm BWP';
-    // ✅ Back panel now uses SAME plywood as cabinet (follows ABC rule like all other panels)
+    // Back panel has its own plywood selection (defaults to cabinet plywood if not set)
+    const backPanelPlywoodBrand = (cabinet as any).backPanelPlywoodBrand || A;
     
     // Pre-compose laminate codes for dynamic grain direction checks
     const topLaminateCode = composeLaminateCode(
@@ -2176,7 +2177,7 @@ export default function Home() {
       height: dimensions.back.height,
       laminateCode: backLaminateCode,
       grainDirection: cabinet.backPanelGrainDirection === true,
-      A: A, // ✅ Same plywood as cabinet - follows ABC rule
+      A: backPanelPlywoodBrand, // Uses back panel plywood (follows ABC rule - groups when A+B+C matches)
       nomW: dimensions.back.width,
       nomH: dimensions.back.height
     });
