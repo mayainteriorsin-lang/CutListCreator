@@ -696,6 +696,16 @@ export default function Home() {
     }
   }, [masterLaminateCode, masterInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
 
+  // ✅ AUTO-SYNC: Shutter laminates auto-sync when main panel laminates are selected (quick sync)
+  useEffect(() => {
+    if (topPanelLaminateCode && topPanelLaminateCode !== shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', topPanelLaminateCode);
+    }
+    if (topPanelInnerLaminateCode && topPanelInnerLaminateCode !== shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', topPanelInnerLaminateCode);
+    }
+  }, [topPanelLaminateCode, topPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
+
   // ✅ AUTO-SYNC: Center Post and Shelves inherit cabinet Inner Laminate code for both sides (time-saver)
   // Logic: Use cabinet Inner Laminate for front and inner sides
   useEffect(() => {
