@@ -5188,14 +5188,14 @@ export default function Home() {
                             <div className="space-y-2">
                               <Label className="text-xs text-slate-600">Front Laminate</Label>
                               <Select
-                                value={watchedValues.centerPostFrontLaminateCode || watchedValues.frontLaminateCode || ''}
-                                onValueChange={(value) => form.setValue('centerPostFrontLaminateCode', value)}
+                                value={watchedValues.centerPostLaminateCode || watchedValues.frontLaminateCode || ''}
+                                onValueChange={(value) => form.setValue('centerPostLaminateCode', value)}
                               >
                                 <SelectTrigger className="h-8 text-sm">
                                   <SelectValue placeholder="Select laminate" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {laminateMemoryData.map((laminate) => (
+                                  {laminateCodeGodownData.map((laminate: LaminateCode) => (
                                     <SelectItem key={laminate.id} value={laminate.code}>
                                       {laminate.code}
                                     </SelectItem>
@@ -5214,7 +5214,7 @@ export default function Home() {
                                   <SelectValue placeholder="Select laminate" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {laminateMemoryData.map((laminate) => (
+                                  {laminateCodeGodownData.map((laminate: LaminateCode) => (
                                     <SelectItem key={laminate.id} value={laminate.code}>
                                       {laminate.code}
                                     </SelectItem>
