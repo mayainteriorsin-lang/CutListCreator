@@ -1976,10 +1976,10 @@ export default function Home() {
     // Add shutters if enabled
     if (cabinet.shuttersEnabled && cabinet.shutters) {
       cabinet.shutters.forEach((shutter, index) => {
-        // Use shutter's individual laminate code if set, otherwise inherit from Cabinet Configuration
-        // ✅ CONSOLIDATION: Compose front + inner laminate codes for matching with Quick Shutter
-        const shutterLaminateCodeFront = shutter.laminateCode || cabinet.shutterLaminateCode || '';
-        const shutterLaminateCodeInner = cabinet.shutterInnerLaminateCode || '';
+        // ✅ SHUTTER CONSOLIDATION: Use cabinet TOP panel laminates so shutters group on same sheet
+        // Shutters inherit topPanel laminates for consolidation with cabinet materials
+        const shutterLaminateCodeFront = cabinet.topPanelLaminateCode || '';
+        const shutterLaminateCodeInner = cabinet.topPanelInnerLaminateCode || '';
         const composedShutterLaminateCode = composeLaminateCode(shutterLaminateCodeFront, shutterLaminateCodeInner);
         
         // ✅ FIX: Swap nomW/nomH based on grain direction to prevent rotation when grains are ON
