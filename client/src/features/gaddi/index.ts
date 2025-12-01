@@ -77,12 +77,26 @@ export function drawGaddiMark(
       ex = xLocal; ey = startY + length;
     }
   } else {
-    // LEFT or RIGHT: line runs along panel local Y axis (top->bottom)
-    const nearLeft = /LEFT/i.test(type);
-    const xLocal = nearLeft ? inset : (panel.w - inset);
-    const startY = (panel.h - length) / 2;
-    sx = xLocal; sy = startY;
-    ex = xLocal; ey = startY + length;
+    // LEFT or RIGHT: Check panel placement to decide line direction
+    // If panel.w >= panel.h: height is on X-axis → horizontal line
+    // If panel.h > panel.w: height is on Y-axis → vertical line
+    const heightOnXAxis = panel.w >= panel.h;
+    
+    if (heightOnXAxis) {
+      // Height on X-axis: draw horizontal line at left/right
+      const nearLeft = /LEFT/i.test(type);
+      const yLocal = nearLeft ? inset : (panel.h - inset);
+      const startX = (panel.w - length) / 2;
+      sx = startX; sy = yLocal;
+      ex = startX + length; ey = yLocal;
+    } else {
+      // Height on Y-axis: draw vertical line at top/bottom
+      const nearLeft = /LEFT/i.test(type);
+      const xLocal = nearLeft ? inset : (panel.w - inset);
+      const startY = (panel.h - length) / 2;
+      sx = xLocal; sy = startY;
+      ex = xLocal; ey = startY + length;
+    }
   }
 
   // --- 4) Map local points to global (rotated) coordinates

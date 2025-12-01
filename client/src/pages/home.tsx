@@ -7702,9 +7702,11 @@ export default function Home() {
                                       
                                       if (!isLeftRight && !isTopBottom) return null;
                                       
-                                      // For TOP/BOTTOM: check where the width is placed
-                                      const widthOnXAxis = w >= h;
-                                      const drawHorizontal = isLeftRight ? false : widthOnXAxis;
+                                      // For both panel types: check where the dimension is placed
+                                      // TOP/BOTTOM: width placement
+                                      // LEFT/RIGHT: height placement
+                                      const dimensionOnXAxis = w >= h;
+                                      const drawHorizontal = dimensionOnXAxis;
                                       
                                       return (
                                         <div 
@@ -7713,7 +7715,7 @@ export default function Home() {
                                             left: '2px',
                                             top: '2px',
                                             right: drawHorizontal ? '2px' : 'auto',
-                                            bottom: !drawHorizontal && isLeftRight ? '2px' : 'auto',
+                                            bottom: !drawHorizontal ? '2px' : 'auto',
                                             width: drawHorizontal ? 'calc(100% - 4px)' : '0px',
                                             height: !drawHorizontal ? 'calc(100% - 4px)' : '0px',
                                             borderTop: drawHorizontal ? '2px dotted #FF0000' : 'none',
