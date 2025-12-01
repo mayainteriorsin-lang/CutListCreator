@@ -63,22 +63,26 @@ export function calculateGaddiLineDirection(panel: GaddiPanel): GaddiLineConfig 
   if (type.includes('LEFT') || type.includes('RIGHT')) {
     // ✓ LEFT/RIGHT: Mark HEIGHT (nomH)
     markDimension = 'height';
-    // Check if nomH is on X-axis (w ≈ nomH?) or Y-axis
+    // Check if nomH appears on X or Y axis on the sheet
     if (Math.abs(w - nomH) < 0.5) {
-      sheetAxis = 'x'; // nomH on X-axis → HORIZONTAL line
+      sheetAxis = 'x'; // nomH on X-axis (width) → HORIZONTAL line
+    } else if (Math.abs(h - nomH) < 0.5) {
+      sheetAxis = 'y'; // nomH on Y-axis (height) → VERTICAL line
     } else {
-      sheetAxis = 'y'; // nomH on Y-axis → VERTICAL line
+      sheetAxis = 'y'; // Default to Y
     }
     console.log(`🔴 ${type}: nomH=${nomH}, w=${w}, h=${h} → axis=${sheetAxis}`);
     
   } else if (type.includes('TOP') || type.includes('BOTTOM')) {
     // ✓ TOP/BOTTOM: Mark WIDTH (nomW)
     markDimension = 'width';
-    // Check if nomW is on X-axis (w ≈ nomW?) or Y-axis
+    // Check if nomW appears on X or Y axis on the sheet
     if (Math.abs(w - nomW) < 0.5) {
-      sheetAxis = 'x'; // nomW on X-axis → HORIZONTAL line
+      sheetAxis = 'x'; // nomW on X-axis (width) → HORIZONTAL line
+    } else if (Math.abs(h - nomW) < 0.5) {
+      sheetAxis = 'y'; // nomW on Y-axis (height) → VERTICAL line (rotated)
     } else {
-      sheetAxis = 'y'; // nomW on Y-axis → VERTICAL line
+      sheetAxis = 'x'; // Default to X
     }
     console.log(`🔵 ${type}: nomW=${nomW}, w=${w}, h=${h} → axis=${sheetAxis}`);
     
