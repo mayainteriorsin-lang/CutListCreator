@@ -879,11 +879,11 @@ export default function DesignCenter() {
             {/* temp shape on top */}
             {temp && (temp as any).type === "rect" && (() => {
               const r = temp as RectShape;
-              return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={6} ry={6} fill="rgba(11,122,107,0.08)" stroke="#0b7a6b" strokeDasharray="6 6" />;
+              return <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={6} ry={6} fill="rgba(11,122,107,0.08)" stroke="#0b7a6b" strokeWidth={4} strokeDasharray="6 6" />;
             })()}
             {temp && (temp as any).type === "line" && (() => {
               const l = temp as LineShape;
-              return <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#0b7a6b" strokeDasharray="4 4" />;
+              return <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={l.color || "#000000"} strokeWidth={2.5} strokeDasharray="4 4" />;
             })()}
           </g>
         </svg>
