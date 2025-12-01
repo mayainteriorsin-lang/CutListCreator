@@ -678,15 +678,15 @@ export default function Home() {
   const shutterPlywoodBrand = form.watch('shutterPlywoodBrand');
   const shutterInnerLaminateCode = form.watch('shutterInnerLaminateCode');
   
-  // ✅ AUTO-SYNC: Shutter laminate inherits main Top Panel Front/Inner Laminate codes (time-saver)
+  // ✅ AUTO-SYNC: Shutter laminate inherits main/master laminate codes (time-saver)
   useEffect(() => {
-    if (topPanelLaminateCode && !shutterLaminateCode) {
-      form.setValue('shutterLaminateCode', topPanelLaminateCode);
+    if (masterLaminateCode && !shutterLaminateCode) {
+      form.setValue('shutterLaminateCode', masterLaminateCode);
     }
-    if (topPanelInnerLaminateCode && !shutterInnerLaminateCode) {
-      form.setValue('shutterInnerLaminateCode', topPanelInnerLaminateCode);
+    if (masterInnerLaminateCode && !shutterInnerLaminateCode) {
+      form.setValue('shutterInnerLaminateCode', masterInnerLaminateCode);
     }
-  }, [topPanelLaminateCode, topPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
+  }, [masterLaminateCode, masterInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
 
   // ✅ AUTO-SYNC: Center Post and Shelves inherit Inner Laminate code (time-saver)
   // Logic: Use Inner Laminate for both front and inner sides
