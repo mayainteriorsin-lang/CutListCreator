@@ -951,22 +951,22 @@ export default function Home() {
   const globalPlywoodBrandMemory = plywoodBrandMemoryData.map(item => item.brand);
 
   // State for laminate section (Top Panel)
-  const [laminateSelection, setLaminateSelection] = useState('');
+  const [laminateSelection, setLaminateSelection] = useState('off white');
   const [topCustomLaminateInput, setTopCustomLaminateInput] = useState('');
   const [saveStatus, setSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Bottom Panel)
-  const [bottomLaminateSelection, setBottomLaminateSelection] = useState('');
+  const [bottomLaminateSelection, setBottomLaminateSelection] = useState('off white');
   const [bottomCustomLaminateInput, setBottomCustomLaminateInput] = useState('');
   const [bottomSaveStatus, setBottomSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Left Panel)
-  const [leftLaminateSelection, setLeftLaminateSelection] = useState('');
+  const [leftLaminateSelection, setLeftLaminateSelection] = useState('off white');
   const [leftCustomLaminateInput, setLeftCustomLaminateInput] = useState('');
   const [leftSaveStatus, setLeftSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Right Panel)
-  const [rightLaminateSelection, setRightLaminateSelection] = useState('');
+  const [rightLaminateSelection, setRightLaminateSelection] = useState('off white');
   const [rightCustomLaminateInput, setRightCustomLaminateInput] = useState('');
   const [rightSaveStatus, setRightSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
