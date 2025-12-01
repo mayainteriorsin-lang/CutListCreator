@@ -607,7 +607,7 @@ export default function Home() {
       shelvesInnerLaminateCode: 'off white', // ✅ FIX: Add missing for grain direction lookup
       plywoodType: storedMemory.plywoodType ?? 'Apple Ply 16mm BWP',
       backPanelPlywoodBrand: storedMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
-      shutterPlywoodBrand: storedMemory.shutterPlywoodBrand ?? (storedMemory.plywoodType ?? 'Apple Ply 16mm BWP'),
+      A: storedMemory.A ?? 'Apple Ply 16mm BWP',
       innerLaminateCode: 'off white',
       // Grain direction fields - default to false for new forms
       topPanelGrainDirection: false,
@@ -675,7 +675,7 @@ export default function Home() {
   const rightPanelLaminateCode = form.watch('rightPanelLaminateCode');
   const backPanelLaminateCode = form.watch('backPanelLaminateCode');
   const shutterLaminateCode = form.watch('shutterLaminateCode');
-  const shutterPlywoodBrand = form.watch('shutterPlywoodBrand');
+  const A = form.watch('A');
   const shutterInnerLaminateCode = form.watch('shutterInnerLaminateCode');
   
   // ✅ AUTO-SYNC: Shutter laminate inherits main/master laminate codes (time-saver)
@@ -716,7 +716,7 @@ export default function Home() {
       const composedCode = composeLaminateCode(shutterLaminateCode, shutterInnerLaminateCode);
       setColourFrameForm(prev => ({
         ...prev,
-        plywoodType: shutterPlywoodBrand || 'Apple Ply 16mm BWP',
+        plywoodType: A || 'Apple Ply 16mm BWP',
         laminateCode: composedCode
       }));
     }
@@ -1861,8 +1861,8 @@ export default function Home() {
       const qtyMatch = cabinet.name.match(/\(Qty: (\d+)\)/);
       const quantity = qtyMatch ? parseInt(qtyMatch[1]) : (cabinet.shutterCount || 1);
       
-      // ✅ Get plywood type from shutterPlywoodBrand (unified field for Basic mode)
-      const plywoodType = cabinet.shutterPlywoodBrand || 'Apple Ply 16mm BWP';
+      // ✅ Get plywood type from A (unified field for Basic mode)
+      const plywoodType = cabinet.A || 'Apple Ply 16mm BWP';
       
       // ✅ FIX: Compose BOTH front + inner laminate codes for correct consolidation and preview display
       const laminateCode = composeLaminateCode(cabinet.shutterLaminateCode || '', cabinet.shutterInnerLaminateCode || '');
@@ -1890,8 +1890,8 @@ export default function Home() {
     const dimensions = calculatePanelDimensions(cabinet);
     
     // Get plywood types (default to Apple Ply 16mm BWP if not set)
-    const plywoodType = cabinet.plywoodType || 'Apple Ply 16mm BWP';
-    const backPanelPlywoodBrand = cabinet.backPanelPlywoodBrand || plywoodType;
+    const plywoodType = cabinet.A || 'Apple Ply 16mm BWP';
+    const backPanelPlywoodBrand = cabinet.A || plywoodType;
     
     // Pre-compose laminate codes for dynamic grain direction checks
     const topLaminateCode = composeLaminateCode(

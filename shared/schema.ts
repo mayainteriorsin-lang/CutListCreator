@@ -35,8 +35,7 @@ export const panelSchema = z.object({
   roomName: z.string().optional(),
   gaddi: z.boolean().optional(),
   grainDirection: z.boolean().optional(), // Wood grain direction flag (prevents rotation)
-  plywoodType: z.string().optional(), // Main plywood brand (for regular panels)
-  backPanelPlywoodBrand: z.string().optional(), // Back panel plywood brand (for back panels)
+  A: z.string().optional(), // Main plywood brand (for regular panels)
   nomW: z.number().positive().optional(), // Nominal width (original size before rotation)
   nomH: z.number().positive().optional(), // Nominal height (original size before rotation)
 });
@@ -124,17 +123,12 @@ export const cabinetSchema = z.object({
   // Note field for additional information
   note: z.string().optional(),
   
-  // Plywood type field for Quick Shutter
-  plywoodType: z.string().optional(),
-  
   // Custom plywood type for Manual Type selection
   customPlywoodType: z.string().optional(),
   
-  // Back panel plywood brand (separate from main plywood type)
-  backPanelPlywoodBrand: z.string().optional(),
-  
-  // Shutter plywood brand (separate from cabinet plywood brand)
-  shutterPlywoodBrand: z.string().optional(),
+  // ✅ UNIFIED PLYWOOD FIELD (Secret code name: A)
+  // Replaces: plywoodType, backPanelPlywoodBrand, shutterPlywoodBrand
+  A: z.string().optional(),
   
   // Shutter laminate code for Quick Shutter
   shutterLaminateCode: z.string().optional(),
