@@ -7702,18 +7702,22 @@ export default function Home() {
                                       
                                       if (!isLeftRight && !isTopBottom) return null;
                                       
+                                      // For TOP/BOTTOM: check where the width is placed
+                                      const widthOnXAxis = w >= h;
+                                      const drawHorizontal = isLeftRight ? false : widthOnXAxis;
+                                      
                                       return (
                                         <div 
                                           className="absolute"
                                           style={{ 
-                                            left: isTopBottom ? '2px' : '2px',
-                                            top: isTopBottom ? '2px' : '2px',
-                                            right: isTopBottom ? '2px' : 'auto',
-                                            bottom: isTopBottom ? 'auto' : '2px',
-                                            width: isLeftRight ? '0px' : 'calc(100% - 4px)',
-                                            height: isTopBottom ? '0px' : 'calc(100% - 4px)',
-                                            borderTop: isTopBottom ? '2px dotted #FF0000' : 'none',
-                                            borderLeft: isLeftRight ? '2px dotted #FF0000' : 'none'
+                                            left: '2px',
+                                            top: '2px',
+                                            right: drawHorizontal ? '2px' : 'auto',
+                                            bottom: !drawHorizontal && isLeftRight ? '2px' : 'auto',
+                                            width: drawHorizontal ? 'calc(100% - 4px)' : '0px',
+                                            height: !drawHorizontal ? 'calc(100% - 4px)' : '0px',
+                                            borderTop: drawHorizontal ? '2px dotted #FF0000' : 'none',
+                                            borderLeft: !drawHorizontal ? '2px dotted #FF0000' : 'none'
                                           }}
                                           title={`GADDI: Mark ${isLeftRight ? 'Height (nomH)' : 'Width (nomW)'}`}
                                         />

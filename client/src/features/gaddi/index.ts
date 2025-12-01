@@ -56,14 +56,26 @@ export function drawGaddiMark(
   let sx = 0, sy = 0, ex = 0, ey = 0;
 
   if (isTopBottom) {
-    // TOP or BOTTOM: line runs along panel local X axis (left->right)
-    // But we want it placed inset from the chosen edge: if type contains TOP -> near top; BOTTOM -> near bottom
-    const nearTop = /TOP/i.test(type);
-    const yLocal = nearTop ? inset : (panel.h - inset);
-    // center the marking horizontally inside panel and make it 'length' long
-    const startX = (panel.w - length) / 2;
-    sx = startX; sy = yLocal;
-    ex = startX + length; ey = yLocal;
+    // TOP or BOTTOM: Check panel placement to decide line direction
+    // If panel.w > panel.h: width is on X-axis → horizontal line
+    // If panel.h > panel.w: width is on Y-axis → vertical line
+    const widthOnXAxis = panel.w >= panel.h;
+    
+    if (widthOnXAxis) {
+      // Width on X-axis: draw horizontal line at top/bottom
+      const nearTop = /TOP/i.test(type);
+      const yLocal = nearTop ? inset : (panel.h - inset);
+      const startX = (panel.w - length) / 2;
+      sx = startX; sy = yLocal;
+      ex = startX + length; ey = yLocal;
+    } else {
+      // Width on Y-axis: draw vertical line at left/right
+      const nearLeft = /TOP/i.test(type) ? true : false; // arbitrary, just pick a side
+      const xLocal = nearLeft ? inset : (panel.w - inset);
+      const startY = (panel.h - length) / 2;
+      sx = xLocal; sy = startY;
+      ex = xLocal; ey = startY + length;
+    }
   } else {
     // LEFT or RIGHT: line runs along panel local Y axis (top->bottom)
     const nearLeft = /LEFT/i.test(type);
