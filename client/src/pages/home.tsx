@@ -6710,7 +6710,7 @@ export default function Home() {
                           </div>
                           
                           <div className="space-y-2">
-                            <Label className="text-xs font-medium">Inner Laminate <span className="text-blue-600 font-bold">(M)</span></Label>
+                            <Label className="text-xs font-medium">Inner Laminate</Label>
                             <Popover open={basicShutterInnerLaminateOpen} onOpenChange={setBasicShutterInnerLaminateOpen}>
                               <PopoverTrigger asChild>
                                 <Button
