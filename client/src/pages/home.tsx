@@ -6884,7 +6884,7 @@ export default function Home() {
             </Card>
 
             {/* Preview & Clear Preview Buttons - Outside Cabinet Card */}
-            <div className="flex justify-center gap-4 my-6">
+            <div className="flex justify-center gap-2 my-6 px-2">
               <Button
                 type="button"
                 onClick={() => {
@@ -6926,10 +6926,10 @@ export default function Home() {
                     });
                   }
                 }}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-8 py-2 rounded-full text-base"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-full text-sm flex-1 max-w-[130px]"
                 data-testid="button-spreadsheet"
               >
-                <i className="fas fa-cog mr-2"></i>
+                <i className="fas fa-cog mr-1"></i>
                 Spreadsheet
               </Button>
               <Button
@@ -6958,18 +6958,18 @@ export default function Home() {
                     });
                   }
                 }}
-                className="font-semibold px-8 py-2 rounded-full text-base"
+                className="font-semibold px-4 py-2 rounded-full text-sm flex-1 max-w-[110px]"
                 data-testid="button-preview-cabinet"
                 disabled={isOptimizing}
               >
                 {isOptimizing ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Optimizing...
+                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    Wait...
                   </>
                 ) : (
                   <>
-                    <Eye className="w-4 h-4 mr-2" />
+                    <Eye className="w-4 h-4 mr-1" />
                     Preview
                   </>
                 )}
@@ -6980,11 +6980,11 @@ export default function Home() {
                 onClick={() => {
                   setShowClearConfirmDialog(true);
                 }}
-                className="font-semibold px-8 py-2 rounded-full text-base"
+                className="font-semibold px-4 py-2 rounded-full text-sm flex-1 max-w-[90px]"
                 data-testid="button-clear-preview"
               >
-                <i className="fas fa-eraser mr-2"></i>
-                Clear Preview
+                <i className="fas fa-eraser mr-1"></i>
+                Clear
               </Button>
             </div>
 
