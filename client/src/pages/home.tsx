@@ -5626,9 +5626,9 @@ export default function Home() {
 
                             {/* Custom Shutter Dimensions */}
                             {watchedValues.shutters && watchedValues.shutters.length > 0 && (
-                              <div className="p-2 bg-gray-50 rounded-lg">
+                              <div className="bg-gray-50 rounded-lg">
 
-                                <div className="text-sm font-medium text-slate-700 mb-2 flex items-center justify-between">
+                                <div className="text-sm font-medium text-slate-700 mb-1 flex items-center justify-between">
                                   <span>Custom Shutter Sizes:</span>
                                   <div className="flex space-x-2">
                                     <Button
@@ -5668,8 +5668,8 @@ export default function Home() {
                                 </div>
                                 <div className="space-y-2">
                                   {watchedValues.shutters.map((shutter, index) => (
-                                    <div key={index} className="p-2 bg-white rounded-lg">
-                                      <div className="flex items-center justify-between mb-1">
+                                    <div key={index} className="bg-white rounded">
+                                      <div className="flex items-center justify-between">
                                         <Label className="text-sm font-medium text-slate-700">Shutter {index + 1}:</Label>
                                         <Button
                                           type="button"
@@ -5685,55 +5685,29 @@ export default function Home() {
                                           <i className="fas fa-times"></i>
                                         </Button>
                                       </div>
-                                      {/* Height (mm) */}
-                                      <div className="space-y-1">
-                                        <Label className="text-xs text-slate-500">Height (mm)</Label>
-                                        <Input
-                                          ref={index === 0 ? shutterHeightInputRef : null}
-                                          type="number"
-                                          value={shutter.height === 0 ? '' : shutter.height}
-                                          onChange={(e) => {
-                                            const newShutters = [...watchedValues.shutters];
-                                            const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                            newShutters[index] = { ...newShutters[index], height: newValue };
-                                            form.setValue('shutters', newShutters);
-                                          }}
-                                          className="text-sm h-9 w-full font-mono"
-                                          placeholder={watchedValues.height?.toString() || "800"}
-                                          min="0"
-                                          max="9999"
-                                          data-testid="input-shutter-height"
-                                        />
-                                      </div>
-
-                                      {/* Remaining fields grid */}
-                                      <div className="grid grid-cols-2 gap-2 mt-2">
-                                        <div className="space-y-1">
-                                          <Label className="text-xs text-slate-500">Height Reduction</Label>
+                                      {/* All fields in compact grid - 4 columns */}
+                                      <div className="grid grid-cols-4 gap-1">
+                                        <div>
+                                          <Label className="text-xs text-slate-500">H</Label>
                                           <Input
+                                            ref={index === 0 ? shutterHeightInputRef : null}
                                             type="number"
-                                            value={watchedValues.shutterHeightReduction?.toString() || '0'}
+                                            value={shutter.height === 0 ? '' : shutter.height}
                                             onChange={(e) => {
-                                              const reductionValue = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                              form.setValue('shutterHeightReduction', reductionValue);
-                                              
-                                              // Auto-update shutter heights: Cabinet Height + Reduction Value
-                                              const cabinetHeight = watchedValues.height || 800;
-                                              const newHeight = cabinetHeight + reductionValue;
-                                              
-                                              // Update all shutters with the new height
-                                              const newShutters = watchedValues.shutters.map(shutter => ({
-                                                ...shutter,
-                                                height: newHeight
-                                              }));
+                                              const newShutters = [...watchedValues.shutters];
+                                              const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                              newShutters[index] = { ...newShutters[index], height: newValue };
                                               form.setValue('shutters', newShutters);
                                             }}
-                                            className="text-sm h-9 w-full font-mono"
-                                            placeholder="0"
+                                            className="text-xs h-8 w-full font-mono"
+                                            placeholder={watchedValues.height?.toString() || "800"}
+                                            min="0"
+                                            max="9999"
+                                            data-testid="input-shutter-height"
                                           />
                                         </div>
-                                        <div className="space-y-1">
-                                          <Label className="text-xs text-slate-500">Width (mm)</Label>
+                                        <div>
+                                          <Label className="text-xs text-slate-500">W</Label>
                                           <Input
                                             type="number"
                                             value={shutter.width === 0 ? '' : shutter.width}
@@ -5743,84 +5717,53 @@ export default function Home() {
                                               newShutters[index] = { ...newShutters[index], width: newValue };
                                               form.setValue('shutters', newShutters);
                                             }}
-                                            className="text-sm h-9 w-full font-mono"
+                                            className="text-xs h-8 w-full font-mono"
                                             placeholder={Math.round((watchedValues.width || 600) / watchedValues.shutterCount).toString()}
                                             min="0"
                                             max="9999"
                                           />
                                         </div>
-                                        <div className="space-y-1">
-                                          <Label className="text-xs text-slate-500">Width Reduction</Label>
+                                        <div>
+                                          <Label className="text-xs text-slate-500">H-</Label>
+                                          <Input
+                                            type="number"
+                                            value={watchedValues.shutterHeightReduction?.toString() || '0'}
+                                            onChange={(e) => {
+                                              const reductionValue = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                              form.setValue('shutterHeightReduction', reductionValue);
+                                              const cabinetHeight = watchedValues.height || 800;
+                                              const newHeight = cabinetHeight + reductionValue;
+                                              const newShutters = watchedValues.shutters.map(shutter => ({
+                                                ...shutter,
+                                                height: newHeight
+                                              }));
+                                              form.setValue('shutters', newShutters);
+                                            }}
+                                            className="text-xs h-8 w-full font-mono"
+                                            placeholder="0"
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label className="text-xs text-slate-500">W-</Label>
                                           <Input
                                             type="number"
                                             value={watchedValues.shutterWidthReduction?.toString() || '0'}
                                             onChange={(e) => {
                                               const reductionValue = e.target.value === '' ? 0 : parseInt(e.target.value);
                                               form.setValue('shutterWidthReduction', reductionValue);
-                                              
-                                              // Auto-update shutter widths: (Cabinet Width / Shutter Count) + Reduction Value
                                               const cabinetWidth = watchedValues.width || 600;
                                               const shutterCount = watchedValues.shutterCount || 1;
                                               const baseWidth = Math.round(cabinetWidth / shutterCount);
                                               const newWidth = baseWidth + reductionValue;
-                                              
-                                              // Update all shutters with the new width
                                               const newShutters = watchedValues.shutters.map(shutter => ({
                                                 ...shutter,
                                                 width: newWidth
                                               }));
                                               form.setValue('shutters', newShutters);
                                             }}
-                                            className="text-sm h-9 w-full font-mono"
+                                            className="text-xs h-8 w-full font-mono"
                                             placeholder="0"
                                           />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <Label className="text-xs text-slate-500">Count</Label>
-                                          <div className="flex items-center space-x-1">
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={() => {
-                                                const currentCount = watchedValues.shutterCount;
-                                                if (currentCount > 0) {
-                                                  form.setValue('shutterCount', currentCount - 1);
-                                                  const newShutters = watchedValues.shutters.slice(0, -1);
-                                                  form.setValue('shutters', newShutters);
-                                                }
-                                              }}
-                                              disabled={watchedValues.shutterCount <= 0}
-                                              className="h-9 w-7 p-0"
-                                            >
-                                              <i className="fas fa-minus text-xs"></i>
-                                            </Button>
-                                            
-                                            <span className="text-xs font-medium min-w-[15px] text-center">
-                                              {watchedValues.shutterCount}
-                                            </span>
-                                            
-                                            <Button
-                                              type="button"
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={() => {
-                                                const currentCount = watchedValues.shutterCount;
-                                                if (currentCount < 5) {
-                                                  form.setValue('shutterCount', currentCount + 1);
-                                                  const newShutters = calculateShutterDimensions({
-                                                    ...watchedValues,
-                                                    shutterCount: currentCount + 1
-                                                  });
-                                                  form.setValue('shutters', newShutters);
-                                                }
-                                              }}
-                                              disabled={watchedValues.shutterCount >= 5}
-                                              className="h-9 w-7 p-0"
-                                            >
-                                              <i className="fas fa-plus text-xs"></i>
-                                            </Button>
-                                          </div>
                                         </div>
                                       </div>
                                     </div>
