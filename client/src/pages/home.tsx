@@ -5172,6 +5172,11 @@ export default function Home() {
                           onValueChange={(value) => {
                             if (value && value !== '__separator_custom__' && value !== '__separator_live__') {
                               form.setValue('innerLaminateCode', value);
+                              // ✅ AUTO-SYNC: Copy Inner Laminate to Center Post & Shelves (time saver)
+                              form.setValue('centerPostLaminateCode', value);
+                              form.setValue('centerPostInnerLaminateCode', value);
+                              form.setValue('shelvesLaminateCode', value);
+                              form.setValue('shelvesInnerLaminateCode', value);
                             }
                           }}
                         >
