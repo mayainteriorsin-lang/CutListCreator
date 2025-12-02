@@ -2737,8 +2737,8 @@ export default function Home() {
       rightPanelInnerLaminateCode: memory.rightPanelInnerLaminateCode ?? 'off white',
       backPanelInnerLaminateCode: memory.backPanelInnerLaminateCode ?? 'off white',
       innerLaminateCode: 'off white',
-      A: memory.A ?? 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: memory.backPanelPlywoodBrand ?? memory.A ?? 'Apple Ply 16mm BWP',
+      A: memory.A || 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: memory.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
       // ✅ DIRECT LINK: Initialize grain directions from database preferences, not hardcoded false
       topPanelGrainDirection: hasTopWoodGrain,
       bottomPanelGrainDirection: hasTopWoodGrain,
@@ -3046,7 +3046,8 @@ export default function Home() {
       shutters: [],
       shutterLaminateCode: shutterMemory?.shutterLaminateCode || '',  // ✅ Keep laminate code
       shutterInnerLaminateCode: shutterMemory?.shutterInnerLaminateCode || '',  // ✅ Keep inner laminate
-      A: cabinetMemory.A ?? 'Apple Ply 16mm BWP',
+      A: cabinetMemory.A || 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: cabinetMemory.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
       topPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
       bottomPanelLaminateCode: cabinetMemory.bottomPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
       leftPanelLaminateCode: cabinetMemory.leftPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
@@ -7309,24 +7310,24 @@ export default function Home() {
                   variant="outline"
                   className="w-full mt-4 border-2 border-dashed border-slate-300 text-slate-600 hover:border-slate-400 hover:text-slate-700"
                   onClick={() => {
+                    const mem = loadCabinetFormMemory();
                     form.reset({
                       id: crypto.randomUUID(),
                       name: `Shutter #${cabinets.length + 1}`,
-                      height: 800,
-                      width: 600,
-                      depth: 450,
+                      height: mem.height || 800,
+                      width: mem.width || 600,
+                      depth: mem.depth || 450,
                       shuttersEnabled: false,
                       shutterCount: 1,
                       shutterType: 'Standard',
-                      shutters: [
-                        { width: 282, height: 784 },
-                        { width: 282, height: 784 }
-                      ],
-                      topPanelLaminateCode: '',
-                      bottomPanelLaminateCode: '',
-                      leftPanelLaminateCode: '',
-                      rightPanelLaminateCode: '',
-                      backPanelLaminateCode: '',
+                      shutters: [],
+                      A: mem.A || 'Apple Ply 16mm BWP',
+                      backPanelPlywoodBrand: mem.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
+                      topPanelLaminateCode: mem.topPanelLaminateCode || '',
+                      bottomPanelLaminateCode: mem.bottomPanelLaminateCode || '',
+                      leftPanelLaminateCode: mem.leftPanelLaminateCode || '',
+                      rightPanelLaminateCode: mem.rightPanelLaminateCode || '',
+                      backPanelLaminateCode: mem.backPanelLaminateCode || '',
                       topPanelInnerLaminateCode: 'off white',
                       bottomPanelInnerLaminateCode: 'off white',
                       leftPanelInnerLaminateCode: 'off white',
@@ -8526,6 +8527,7 @@ export default function Home() {
                   depth: 450,
                   widthReduction: 36,
                   A: masterPlywoodBrand || 'Apple Ply 16mm BWP',
+                  backPanelPlywoodBrand: 'Apple ply 6mm BWP',
                   bottomPanelLaminateCode: masterLaminateCode || '',
                   leftPanelLaminateCode: masterLaminateCode || '',
                   rightPanelLaminateCode: masterLaminateCode || '',
