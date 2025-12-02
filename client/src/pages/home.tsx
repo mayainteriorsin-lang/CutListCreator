@@ -4351,9 +4351,6 @@ export default function Home() {
                                     saveLaminateCodeMutation.mutate(codeToSave);
                                   }
                                   
-                                  // Set as selected code (but don't apply to all panels)
-                                  setMasterLaminateCode(codeToSave);
-                                  
                                   // ✅ CRITICAL FIX: Mark current form panel laminates as user-selected
                                   // This ensures validation passes when adding the cabinet
                                   updateLaminateWithTracking('topPanelLaminateCode', codeToSave, 'user');
@@ -4364,13 +4361,17 @@ export default function Home() {
                                   
                                   // ✅ REMOVED: Old auto-load wood grains preference logic - handled by DIRECT LINK system
                                   
-                                  // Clear input
+                                  // ✅ Clear field after Enter - ready for next use (Save Laminate Godown mode)
                                   setMasterCustomLaminateInput('');
+                                  setMasterLaminateCode('');
                                   
                                   // ✅ Close dropdown after saving new code
                                   if (masterLaminateDropdownRef.current) {
                                     masterLaminateDropdownRef.current.open = false;
                                   }
+                                  
+                                  // Keep focus on the input for next entry
+                                  masterLaminateInputRef.current?.focus();
                                 } else if (e.key === 'Escape') {
                                   // Clear field
                                   setMasterCustomLaminateInput('');
