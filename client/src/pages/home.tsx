@@ -5538,14 +5538,14 @@ export default function Home() {
                         </div>
 
                         {watchedValues.shuttersEnabled && (
-                          <div>
+                          <div className="overflow-hidden">
                             {/* Shutter Controls */}
-                          <div className="space-y-8">
+                          <div className="space-y-3">
                             
                             {/* Front and Inner Laminate - Outside individual shutter cards */}
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-2">
                               {/* Front Laminate */}
-                              <div className="space-y-2">
+                              <div className="space-y-1">
                                 <Label className="text-xs text-slate-600 font-medium">Front Laminate</Label>
                                 <Popover>
                                   <PopoverTrigger asChild>
@@ -5593,7 +5593,7 @@ export default function Home() {
                               </div>
 
                               {/* Inner Laminate */}
-                              <div className="space-y-2">
+                              <div className="space-y-1">
                                 <Label className="text-xs text-slate-600 font-medium">Inner Laminate</Label>
                                 <Select 
                                   value={watchedValues.shutterInnerLaminateCode || 'off white'}
@@ -5626,9 +5626,9 @@ export default function Home() {
 
                             {/* Custom Shutter Dimensions */}
                             {watchedValues.shutters && watchedValues.shutters.length > 0 && (
-                              <div className="p-8 bg-gray-50 rounded-lg border">
+                              <div className="p-2 bg-gray-50 rounded-lg">
 
-                                <div className="text-sm font-medium text-slate-700 mb-6 flex items-center justify-between">
+                                <div className="text-sm font-medium text-slate-700 mb-2 flex items-center justify-between">
                                   <span>Custom Shutter Sizes:</span>
                                   <div className="flex space-x-2">
                                     <Button
@@ -5666,10 +5666,10 @@ export default function Home() {
                                     </Button>
                                   </div>
                                 </div>
-                                <div className="space-y-6">
+                                <div className="space-y-2">
                                   {watchedValues.shutters.map((shutter, index) => (
-                                    <div key={index} className="p-6 bg-white rounded-lg border">
-                                      <div className="flex items-center justify-between mb-2">
+                                    <div key={index} className="p-2 bg-white rounded-lg">
+                                      <div className="flex items-center justify-between mb-1">
                                         <Label className="text-sm font-medium text-slate-700">Shutter {index + 1}:</Label>
                                         <Button
                                           type="button"
@@ -5707,7 +5707,7 @@ export default function Home() {
                                       </div>
 
                                       {/* Remaining fields grid */}
-                                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+                                      <div className="grid grid-cols-2 gap-2 mt-2">
                                         <div className="space-y-1">
                                           <Label className="text-xs text-slate-500">Height Reduction</Label>
                                           <Input
