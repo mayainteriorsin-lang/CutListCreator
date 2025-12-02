@@ -5626,46 +5626,7 @@ export default function Home() {
 
                             {/* Custom Shutter Dimensions */}
                             {watchedValues.shutters && watchedValues.shutters.length > 0 && (
-                              <div className="bg-gray-50 rounded-lg">
-
-                                <div className="text-sm font-medium text-slate-700 mb-1 flex items-center justify-between">
-                                  <span>Custom Shutter Sizes:</span>
-                                  <div className="flex space-x-2">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        const currentShutters = watchedValues.shutters || [];
-                                        const shutter1LaminateCode = currentShutters.length > 0 ? currentShutters[0].laminateCode : '';
-                                        const newShutter = { 
-                                          width: Math.round((watchedValues.width || 600) / (watchedValues.shutterCount + 1)), 
-                                          height: watchedValues.height || 800,
-                                          laminateCode: shutter1LaminateCode
-                                        };
-                                        form.setValue('shutters', [...currentShutters, newShutter]);
-                                        form.setValue('shutterCount', currentShutters.length + 1);
-                                      }}
-                                      className="text-xs text-green-600 hover:text-green-800 h-6 px-2"
-                                    >
-                                      <i className="fas fa-plus mr-1"></i>
-                                      Add Size
-                                    </Button>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        const newShutters = calculateShutterDimensions(watchedValues);
-                                        form.setValue('shutters', newShutters);
-                                      }}
-                                      className="text-xs text-blue-600 hover:text-blue-800 h-6 px-2"
-                                    >
-                                      <i className="fas fa-refresh mr-1"></i>
-                                      Reset
-                                    </Button>
-                                  </div>
-                                </div>
+                              <div>
                                 <div className="space-y-2">
                                   {watchedValues.shutters.map((shutter, index) => (
                                     <div key={index} className="bg-white rounded">
