@@ -7776,35 +7776,17 @@ export default function Home() {
                                       <>
                                         {/* Panel name - Smart positioning for SHUTTER panels */}
                                         {isShutterPanel ? (
-                                          // SHUTTER label: place along the height axis
-                                          h >= w ? (
-                                            // Height on Y-axis (portrait): rotate label vertically on right side
-                                            <p 
-                                              className="absolute font-bold uppercase"
-                                              style={{
-                                                right: '4px',
-                                                top: '50%',
-                                                transform: 'translateY(-50%) rotate(90deg)',
-                                                transformOrigin: 'center center',
-                                                fontSize: `${Math.max(9, Math.min(16, h / 10, w / 6))}px`
-                                              }}
-                                            >
-                                              {panelName}
-                                            </p>
-                                          ) : (
-                                            // Height on X-axis (landscape): label horizontal at bottom
-                                            <p 
-                                              className="absolute font-bold uppercase"
-                                              style={{
-                                                left: '50%',
-                                                bottom: '2px',
-                                                transform: 'translateX(-50%)',
-                                                fontSize: `${Math.max(9, Math.min(16, w / 10, h / 6))}px`
-                                              }}
-                                            >
-                                              {panelName}
-                                            </p>
-                                          )
+                                          // SHUTTER label: horizontal text on Y-axis (left side), at bottom
+                                          <p 
+                                            className="absolute font-bold uppercase text-slate-700"
+                                            style={{
+                                              left: '4px',
+                                              bottom: '4px',
+                                              fontSize: `${Math.max(9, Math.min(14, Math.min(w, h) / 8))}px`
+                                            }}
+                                          >
+                                            {panelName}
+                                          </p>
                                         ) : (
                                           // Other panels: standard bottom center positioning
                                           <p 
