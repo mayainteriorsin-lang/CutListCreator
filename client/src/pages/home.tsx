@@ -1751,105 +1751,50 @@ export default function Home() {
   const mmToInches = (mm: number): number => parseFloat((mm / 25.4).toFixed(1));
   const inchesToMm = (inches: number): number => Math.round(inches * 25.4);
 
-  // Normalize strings for grouping (removes whitespace and case inconsistencies)
-  // This ensures items with the same text group together despite spacing/case differences
-  // Case-insensitive: "Apple Ply" and "apple ply" are treated as the same
-  const normalizeForGrouping = (text: string): string => {
-    return text
-      .trim()                          // Remove leading/trailing spaces
-      .toLowerCase()                   // Normalize to lowercase for case-insensitive grouping
-      .replace(/\s+/g, ' ');          // Collapse multiple spaces to single space
-  };
+  // Normalize text for grouping (lowercase, trim spaces)
+  const normalizeForGrouping = (text: string) => text.trim().toLowerCase().replace(/\s+/g, ' ');
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ✅ STRONG ABC RULE - Single source of truth for panel grouping
-  // ═══════════════════════════════════════════════════════════════════════════
-  // A = Plywood Brand (e.g., "Apple Ply 16mm BWP")
-  // B = Front Laminate Code (e.g., "456SF")
-  // C = Inner Laminate Code (e.g., "off white")
-  //
-  // RULE: Panels ONLY go on the SAME sheet if ALL THREE match exactly
-  // ═══════════════════════════════════════════════════════════════════════════
-  
-  const DEFAULT_FRONT_LAMINATE = 'off white';
-  const DEFAULT_INNER_LAMINATE = 'off white';
-  const DEFAULT_PLYWOOD_16MM = 'Apple Ply 16mm BWP';
-  const DEFAULT_PLYWOOD_6MM = 'Apple ply 6mm BWP';
-  
-  type ABCValues = {
-    A: string;  // Plywood Brand
-    B: string;  // Front Laminate
-    C: string;  // Inner Laminate
-    groupKey: string;  // Normalized key for grouping
-  };
-  
-  // Extract ABC values from a panel - SINGLE SOURCE OF TRUTH
-  const extractABC = (panel: { name: string; A?: string; laminateCode?: string }): ABCValues => {
-    const isBackPanel = panel.name.includes('- Back Panel');
+  // ABC Rule: A=Plywood, B=Front Laminate, C=Inner Laminate
+  // Panels go on same sheet only if all 3 match
+  const extractABC = (panel: { name: string; A?: string; laminateCode?: string }) => {
+    const isBack = panel.name.includes('- Back Panel');
+    const A = panel.A || (isBack ? 'Apple ply 6mm BWP' : 'Apple Ply 16mm BWP');
     
-    // A = Plywood Brand
-    const A = panel.A || (isBackPanel ? DEFAULT_PLYWOOD_6MM : DEFAULT_PLYWOOD_16MM);
+    const code = (panel.laminateCode || '').trim();
+    let B = 'off white';
+    let C = 'off white';
     
-    // Parse laminateCode to get B (front) and C (inner)
-    const laminateCode = (panel.laminateCode || '').trim();
-    let B = DEFAULT_FRONT_LAMINATE;
-    let C = DEFAULT_INNER_LAMINATE;
-    
-    if (laminateCode.includes(' + ')) {
-      // Format: "456SF + off white" → B="456SF", C="off white"
-      const parts = laminateCode.split(' + ').map(s => s.trim());
-      B = parts[0] || DEFAULT_FRONT_LAMINATE;
-      C = parts[1] || DEFAULT_INNER_LAMINATE;
-    } else if (laminateCode) {
-      // Only front laminate provided
-      B = laminateCode;
-      C = DEFAULT_INNER_LAMINATE;
+    if (code.includes(' + ')) {
+      const parts = code.split(' + ').map(s => s.trim());
+      B = parts[0] || 'off white';
+      C = parts[1] || 'off white';
+    } else if (code) {
+      B = code;
     }
     
-    // Normalize "backer" to "off white" for backwards compatibility
-    if (B.toLowerCase() === 'backer') B = DEFAULT_FRONT_LAMINATE;
-    if (C.toLowerCase() === 'backer') C = DEFAULT_INNER_LAMINATE;
+    if (B.toLowerCase() === 'backer') B = 'off white';
+    if (C.toLowerCase() === 'backer') C = 'off white';
     
-    // Generate normalized group key
     const groupKey = `${normalizeForGrouping(A)}|||${normalizeForGrouping(B)}|||${normalizeForGrouping(C)}`;
-    
     return { A, B, C, groupKey };
   };
   
-  // Group panels by ABC - returns panels organized by their group key
-  const groupPanelsByABC = <T extends { name: string; A?: string; laminateCode?: string }>(
-    panels: T[]
-  ): Record<string, { A: string; B: string; C: string; laminateCode: string; panels: T[] }> => {
+  // Group panels by ABC
+  const groupPanelsByABC = (panels: any[]) => {
     return panels.reduce((acc, panel) => {
       const abc = extractABC(panel);
-      
       if (!acc[abc.groupKey]) {
-        acc[abc.groupKey] = {
-          A: abc.A,
-          B: abc.B,
-          C: abc.C,
-          laminateCode: panel.laminateCode || `${abc.B} + ${abc.C}`,
-          panels: []
-        };
+        acc[abc.groupKey] = { A: abc.A, B: abc.B, C: abc.C, laminateCode: panel.laminateCode || `${abc.B} + ${abc.C}`, panels: [] };
       }
       acc[abc.groupKey].panels.push(panel);
       return acc;
-    }, {} as Record<string, { A: string; B: string; C: string; laminateCode: string; panels: T[] }>);
+    }, {} as Record<string, any>);
   };
-  // ═══════════════════════════════════════════════════════════════════════════
 
-  // Check if material confirmation is required before adding a panel
-  // Returns true if laminate is "none"/empty/unspecified
-  const requiresMaterialConfirmation = ({ plywood, laminateCode }: { plywood?: string; laminateCode?: string }): boolean => {
-    const normalizedLaminate = (laminateCode || '').trim().toLowerCase();
-    
-    // Check if laminate code is empty or "none"
-    if (normalizedLaminate === '' || normalizedLaminate === 'none') {
-      return true;
-    }
-    
-    // Laminate code is specified with a real value
-    return false;
+  // Check if laminate is empty or "none"
+  const requiresMaterialConfirmation = ({ laminateCode }: { plywood?: string; laminateCode?: string }) => {
+    const code = (laminateCode || '').trim().toLowerCase();
+    return code === '' || code === 'none';
   };
 
   // Calculate panel dimensions - Apply width reduction to top/bottom panels for optimizer
@@ -2294,7 +2239,7 @@ export default function Home() {
     const panelsByABC = groupPanelsByABC(allPanels);
     
     // Convert to expected format
-    const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]) => {
+    const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]: [string, any]) => {
       acc[groupKey] = {
         brand: group.A,
         laminateCode: group.laminateCode,
@@ -2463,7 +2408,7 @@ export default function Home() {
     const panelsByABC = groupPanelsByABC(allPanels);
     
     // Convert to expected format
-    const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]) => {
+    const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]: [string, any]) => {
       acc[groupKey] = {
         brand: group.A,
         laminateCode: group.laminateCode,
@@ -3863,7 +3808,7 @@ export default function Home() {
       const panelsByABC = groupPanelsByABC(allPanels);
       
       // Convert to expected format
-      const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]) => {
+      const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]: [string, any]) => {
         acc[groupKey] = {
           brand: group.A,
           laminateCode: group.laminateCode,
