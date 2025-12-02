@@ -626,8 +626,8 @@ export default function Home() {
       leftPanelInnerLaminateCode: storedMemory.leftPanelInnerLaminateCode ?? 'off white',
       rightPanelInnerLaminateCode: storedMemory.rightPanelInnerLaminateCode ?? 'off white',
       backPanelInnerLaminateCode: storedMemory.backPanelInnerLaminateCode ?? 'off white',
-      A: storedMemory.A ?? 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: storedMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
+      A: storedMemory.A || 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: storedMemory.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
       innerLaminateCode: storedMemory.topPanelInnerLaminateCode ?? 'off white',
       // Grain direction fields - default to false for new forms
       topPanelGrainDirection: false,
