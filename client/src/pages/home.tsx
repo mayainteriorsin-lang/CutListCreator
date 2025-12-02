@@ -4066,57 +4066,59 @@ export default function Home() {
       <header className="border-b border-gray-200 bg-white shadow-xl">
         <div className="max-w-7xl mx-auto px-4 py-4">
           {/* Title Row */}
-          <div className="flex items-center space-x-3 mb-4">
+          <div className="flex items-center space-x-3">
             <i className="fas fa-tools text-2xl text-blue-400"></i>
             <h1 className="text-xl font-semibold text-gray-900 leading-none">Cutting List Generator</h1>
           </div>
-          
-          {/* Buttons Row */}
-          <div className="flex items-center gap-3 justify-end overflow-x-auto">
-              {/* Calculation Logic Lock */}
-              <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
-                <Label htmlFor="calc-lock" className="text-xs text-gray-700">
-                  Logic
-                </Label>
-                <Switch
-                  id="calc-lock"
-                  checked={calculationLogicLocked}
-                  onCheckedChange={setCalculationLogicLocked}
-                  className="scale-75"
-                />
-                <i className={`fas ${calculationLogicLocked ? 'fa-lock text-blue-400' : 'fa-unlock text-blue-400'} text-sm`}></i>
-              </div>
-              
-              <Button
-                onClick={exportToExcel}
-                size="sm"
-                className="inline-flex items-center bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white font-medium shadow-lg"
-              >
-                <i className="fas fa-file-excel mr-2"></i>
-                Export Excel
-              </Button>
-              <Button
-                onClick={exportToGoogleSheets}
-                size="sm"
-                className="inline-flex items-center bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white font-medium shadow-lg"
-              >
-                <i className="fab fa-google mr-2"></i>
-                Google Sheets
-              </Button>
-              <Button
-                onClick={printList}
-                size="sm"
-                variant="outline"
-                className="inline-flex items-center"
-              >
-                <i className="fas fa-print mr-2"></i>
-                Print List
-              </Button>
-          </div>
         </div>
       </header>
+      
+      {/* Fixed Bottom Toolbar */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 px-2 py-2">
+        <div className="flex items-center gap-2 justify-center overflow-x-auto max-w-7xl mx-auto">
+          {/* Calculation Logic Lock */}
+          <div className="flex items-center space-x-1 px-2 py-1 bg-gray-50 border border-gray-200 rounded-lg">
+            <Label htmlFor="calc-lock" className="text-xs text-gray-700">
+              Logic
+            </Label>
+            <Switch
+              id="calc-lock"
+              checked={calculationLogicLocked}
+              onCheckedChange={setCalculationLogicLocked}
+              className="scale-75"
+            />
+            <i className={`fas ${calculationLogicLocked ? 'fa-lock' : 'fa-unlock'} text-blue-400 text-xs`}></i>
+          </div>
+          
+          <Button
+            onClick={exportToExcel}
+            size="sm"
+            className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-3 py-1"
+          >
+            <i className="fas fa-file-excel mr-1"></i>
+            Excel
+          </Button>
+          <Button
+            onClick={exportToGoogleSheets}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1"
+          >
+            <i className="fab fa-google mr-1"></i>
+            Sheets
+          </Button>
+          <Button
+            onClick={printList}
+            size="sm"
+            variant="outline"
+            className="text-xs px-3 py-1"
+          >
+            <i className="fas fa-print mr-1"></i>
+            Print
+          </Button>
+        </div>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="max-w-7xl mx-auto px-4 py-6 pb-20">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Controls */}
           <div className="lg:col-span-2 space-y-6">
