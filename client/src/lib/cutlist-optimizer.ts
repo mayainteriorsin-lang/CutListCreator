@@ -77,17 +77,33 @@ class MaxRectsBin {
 
   tryPlace(piece: any, strategy: string) {
     let bestScore = { a: Infinity, s1: Infinity, s2: Infinity }, best: any = null, idxBest = -1;
+    const canRotate = piece.rotate === true;
 
     for (let i = 0; i < this.free.length; i++) {
       const fr = this.free[i];
 
-      // NO ROTATION - Try non-rotated orientation ONLY
+      // Try non-rotated orientation
       if (piece.w <= fr.w && piece.h <= fr.h) {
         const aWaste = fr.w * fr.h - piece.w * piece.h;
         const s1 = Math.min(fr.w - piece.w, fr.h - piece.h);
         const s2 = Math.max(fr.w - piece.w, fr.h - piece.h);
         const key = (strategy === "BAF") ? aWaste : (strategy === "BSSF" ? s1 : s2);
         const cand = { a: key, s1, s2, rot: false, rect: { x: fr.x, y: fr.y, w: piece.w, h: piece.h }, i };
+        if (s1 <= EPS && s2 <= EPS) { bestScore = cand; best = cand; idxBest = i; break; }
+        if (key < bestScore.a || (key === bestScore.a && (s1 < bestScore.s1 || (s1 === bestScore.s1 && s2 < bestScore.s2)))) {
+          bestScore = cand;
+          best = cand;
+          idxBest = i;
+        }
+      }
+
+      // Try rotated orientation if allowed (non-wood-grain panels)
+      if (canRotate && piece.h <= fr.w && piece.w <= fr.h) {
+        const aWaste = fr.w * fr.h - piece.w * piece.h;
+        const s1 = Math.min(fr.w - piece.h, fr.h - piece.w);
+        const s2 = Math.max(fr.w - piece.h, fr.h - piece.w);
+        const key = (strategy === "BAF") ? aWaste : (strategy === "BSSF" ? s1 : s2);
+        const cand = { a: key, s1, s2, rot: true, rect: { x: fr.x, y: fr.y, w: piece.h, h: piece.w }, i };
         if (s1 <= EPS && s2 <= EPS) { bestScore = cand; best = cand; idxBest = i; break; }
         if (key < bestScore.a || (key === bestScore.a && (s1 < bestScore.s1 || (s1 === bestScore.s1 && s2 < bestScore.s2)))) {
           bestScore = cand;
@@ -106,8 +122,8 @@ class MaxRectsBin {
       y: best.rect.y + this.kerf / 2,
       w: best.rect.w - this.kerf,
       h: best.rect.h - this.kerf,
-      rotated: false,
-      rotateAllowed: false,
+      rotated: best.rot,
+      rotateAllowed: canRotate,
       gaddi: !!piece.gaddi,
       laminateCode: piece.laminateCode || '',
       nomW: (piece as any).nomW || piece.w,
@@ -370,13 +386,14 @@ export function optimizeCutlist({
       const instanceId = `${p.id}::${i}`;
       const panelType = (p as any).panelType || 'panel';
       
+      const canRotate = p.rotate === true;
       const piece = { 
         id: instanceId,
         origId: p.id,
         w: p.w, 
         h: p.h, 
-        rotate: false,  // NO ROTATION - always false
-        rotateAllowed: false,  // NO ROTATION - always false
+        rotate: canRotate,
+        rotateAllowed: canRotate,
         gaddi: !!p.gaddi,
         laminateCode: p.laminateCode || '',
         nomW: (p as any).nomW || p.w,
@@ -390,14 +407,14 @@ export function optimizeCutlist({
         instanceId,
         panelType,
         dimensions: `${piece.w}×${piece.h}mm`,
-        rotation: '🔒 DISABLED'
+        rotation: canRotate ? '✅ CAN ROTATE' : '🔒 LOCKED'
       });
     }
   });
   
-  // 📊 LOG ALL EXPANDED INSTANCES - ROTATION DISABLED
-  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length}) — ROTATION DISABLED`);
-  console.log('🔒 ROTATION DISABLED - All pieces placed in original orientation only');
+  // 📊 LOG ALL EXPANDED INSTANCES
+  const rotatingCount = expanded.filter(e => e.rotate).length;
+  console.groupCollapsed(`🆔 OPTIMIZER EXPANDED INSTANCES (Total: ${expanded.length}, Can Rotate: ${rotatingCount})`);
   console.table(expandLog);
   console.groupEnd();
 
