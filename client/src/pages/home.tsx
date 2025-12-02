@@ -7362,7 +7362,7 @@ export default function Home() {
           <DialogHeader>
             <DialogTitle>Cutting Layout Preview</DialogTitle>
           </DialogHeader>
-          {cabinets.length > 0 && (() => {
+          {showPreviewDialog && cabinets.length > 0 && (() => {
             // Use memoized brandResults to prevent recalculation on every keystroke
             const brandResults = previewBrandResults;
             console.log('📊 Dialog render: brandResults.length=', brandResults.length, 'showPreviewDialog=', showPreviewDialog);
