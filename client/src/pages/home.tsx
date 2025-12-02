@@ -1931,6 +1931,7 @@ export default function Home() {
   };
 
   // Helper function to compose laminate code from separate front and inner codes
+  // ✅ CRITICAL: Default must match grouping logic's default ("off white") for consistent ABC matching
   const composeLaminateCode = (frontCode: string, innerCode: string): string => {
     const front = (frontCode || '').trim();
     const inner = (innerCode || '').trim();
@@ -1940,18 +1941,18 @@ export default function Home() {
       return `${front} + ${inner}`;
     }
     
-    // If only front is provided, default inner to "Backer"
+    // If only front is provided, default inner to "off white" (matches grouping default)
     if (front && !inner) {
-      return `${front} + Backer`;
+      return `${front} + off white`;
     }
     
-    // If only inner is provided, default front to "Backer"
+    // If only inner is provided, default front to "off white"
     if (!front && inner) {
-      return `Backer + ${inner}`;
+      return `off white + ${inner}`;
     }
     
-    // If neither is provided, return empty string
-    return '';
+    // If neither is provided, use "off white + off white" for consistent grouping
+    return 'off white + off white';
   };
 
   // ✅ REMOVED: normalizeLaminateCode function - no longer needed without laminate types
@@ -2212,6 +2213,7 @@ export default function Home() {
     
     // ✅ Sheet Consolidation: A + B + C matching (plywood + front laminate + inner laminate)
     // Group panels using 3-way matching: All must match for same sheet
+    console.group('🔍 ABC GROUPING DEBUG - Panel Analysis');
     const panelsByBrand = allPanels.reduce((acc, panel) => {
       const isBackPanel = panel.name.includes('- Back Panel');
       // A field: Plywood brand
@@ -2233,13 +2235,31 @@ export default function Home() {
         innerLaminate = 'off white'; // default
       }
       
+      // ✅ Normalize "backer" to "off white" for consistent grouping (backwards compatibility)
+      if (frontLaminate.toLowerCase() === 'backer') frontLaminate = 'off white';
+      if (innerLaminate.toLowerCase() === 'backer') innerLaminate = 'off white';
+      
       // ✅ CRITICAL: Group key must match A + B + C
       // If any of these differ, panels go on separate sheets
       const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(frontLaminate)}|||${normalizeForGrouping(innerLaminate)}`;
+      
+      // 🔍 DEBUG: Log each panel's ABC values
+      console.log(`Panel: ${panel.name}`);
+      console.log(`  A (Plywood): "${brand}"`);
+      console.log(`  Raw laminateCode: "${laminateCode}"`);
+      console.log(`  B (Front): "${frontLaminate}"`);
+      console.log(`  C (Inner): "${innerLaminate}"`);
+      console.log(`  GroupKey: "${groupKey}"`);
+      
       if (!acc[groupKey]) acc[groupKey] = { brand, laminateCode, panels: [] };
       acc[groupKey].panels.push(panel);
       return acc;
     }, {} as Record<string, { brand: string; laminateCode: string; panels: typeof allPanels }>);
+    console.log('🔍 Total unique groups:', Object.keys(panelsByBrand).length);
+    Object.entries(panelsByBrand).forEach(([key, group]) => {
+      console.log(`  Group "${key}": ${group.panels.length} panels`);
+    });
+    console.groupEnd();
     
     const brandResults: Array<{ brand: string; laminateCode: string; laminateDisplay: string; result: any; isBackPanel: boolean }> = [];
     
@@ -2418,6 +2438,10 @@ export default function Home() {
         frontLaminate = laminateCode.trim();
         innerLaminate = 'off white'; // default
       }
+      
+      // ✅ Normalize "backer" to "off white" for consistent grouping (backwards compatibility)
+      if (frontLaminate.toLowerCase() === 'backer') frontLaminate = 'off white';
+      if (innerLaminate.toLowerCase() === 'backer') innerLaminate = 'off white';
       
       // ✅ CRITICAL: Group key uses A + B + C
       // Panels only consolidate to same sheet when ALL three match exactly
@@ -3834,6 +3858,10 @@ export default function Home() {
           frontLaminate = laminateCode.trim();
           innerLaminate = 'off white'; // default
         }
+        
+        // ✅ Normalize "backer" to "off white" for consistent grouping (backwards compatibility)
+        if (frontLaminate.toLowerCase() === 'backer') frontLaminate = 'off white';
+        if (innerLaminate.toLowerCase() === 'backer') innerLaminate = 'off white';
         
         // ✅ CRITICAL: Group key uses A + B + C
         // Panels only consolidate to same sheet when ALL three match exactly
