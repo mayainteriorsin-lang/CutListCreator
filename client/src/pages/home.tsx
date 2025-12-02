@@ -5502,11 +5502,11 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* Shutter Configuration */}
-                      <div ref={shutterConfigSectionRef} className="space-y-8">
+                    {/* Shutter Configuration - Highlighted section with border and shadow */}
+                      <div ref={shutterConfigSectionRef} className="space-y-4 border-2 border-orange-200 rounded-lg p-4 shadow-md bg-orange-50/30">
                         {/* Heading with Include Shutters toggle on right */}
                         <div className="flex items-center justify-between">
-                          <Label className="text-sm font-medium text-slate-700 flex items-center">
+                          <Label className="text-base font-semibold text-slate-800 flex items-center">
                             <i className="fas fa-door-open mr-2 text-orange-600"></i>
                             Shutter Configuration
                           </Label>
