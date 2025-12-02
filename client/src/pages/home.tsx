@@ -5685,7 +5685,7 @@ export default function Home() {
                                           <i className="fas fa-times"></i>
                                         </Button>
                                       </div>
-                                      {/* All fields in compact grid - 4 columns */}
+                                      {/* All fields in compact grid - 4 columns: H, -H, W, -W */}
                                       <div className="grid grid-cols-4 gap-1">
                                         <div>
                                           <Label className="text-xs text-slate-500">H</Label>
@@ -5707,24 +5707,7 @@ export default function Home() {
                                           />
                                         </div>
                                         <div>
-                                          <Label className="text-xs text-slate-500">W</Label>
-                                          <Input
-                                            type="number"
-                                            value={shutter.width === 0 ? '' : shutter.width}
-                                            onChange={(e) => {
-                                              const newShutters = [...watchedValues.shutters];
-                                              const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                              newShutters[index] = { ...newShutters[index], width: newValue };
-                                              form.setValue('shutters', newShutters);
-                                            }}
-                                            className="text-xs h-8 w-full font-mono"
-                                            placeholder={Math.round((watchedValues.width || 600) / watchedValues.shutterCount).toString()}
-                                            min="0"
-                                            max="9999"
-                                          />
-                                        </div>
-                                        <div>
-                                          <Label className="text-xs text-slate-500">H-</Label>
+                                          <Label className="text-xs text-slate-500">-H</Label>
                                           <Input
                                             type="number"
                                             value={watchedValues.shutterHeightReduction?.toString() || '0'}
@@ -5744,7 +5727,24 @@ export default function Home() {
                                           />
                                         </div>
                                         <div>
-                                          <Label className="text-xs text-slate-500">W-</Label>
+                                          <Label className="text-xs text-slate-500">W</Label>
+                                          <Input
+                                            type="number"
+                                            value={shutter.width === 0 ? '' : shutter.width}
+                                            onChange={(e) => {
+                                              const newShutters = [...watchedValues.shutters];
+                                              const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                              newShutters[index] = { ...newShutters[index], width: newValue };
+                                              form.setValue('shutters', newShutters);
+                                            }}
+                                            className="text-xs h-8 w-full font-mono"
+                                            placeholder={Math.round((watchedValues.width || 600) / watchedValues.shutterCount).toString()}
+                                            min="0"
+                                            max="9999"
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label className="text-xs text-slate-500">-W</Label>
                                           <Input
                                             type="number"
                                             value={watchedValues.shutterWidthReduction?.toString() || '0'}
