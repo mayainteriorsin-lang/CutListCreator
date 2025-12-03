@@ -20,7 +20,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { useToast } from '@/hooks/use-toast';
 import DesignCenter from "../components/ui/DesignCenter";
 import Spreadsheet from '@/components/Spreadsheet';
-import { Cabinet, cabinetSchema, ShutterType, Panel, PanelGroup, CuttingListSummary, LaminateCode, cabinetTypes, CabinetType, LaminateMemory, PlywoodBrandMemory } from '@shared/schema';
+import { Cabinet, cabinetSchema, ShutterType, Panel, PanelGroup, CuttingListSummary, LaminateCode, cabinetTypes, CabinetType, LaminateMemory, PlywoodBrandMemory, LaminateCodeGodown } from '@shared/schema';
 import * as XLSX from 'xlsx';
 import { generateCutlistPDF } from '@/lib/pdf-export';
 import { generateMaterialListCSV } from '@/lib/material-list-export';
@@ -29,11 +29,12 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 // ✅ MODULES: Simple panel optimization
+import { calculateGaddiLineDirection, shouldShowGaddiMarking } from '@/features/gaddi';
 import { prepareStandardParts } from '@/features/standard/dimensional-mapping';
 import { optimizeStandardCutlist } from '@/features/standard/optimizer';
 import { getDisplayDimensions } from '@/features/cutlist/core/efficiency';
+import { validateGaddiRule } from '@/features/gaddi';
 import { optimizeCutlist } from '@/lib/cutlist-optimizer';
-import { drawGaddiMark } from '@/features/gaddi';
 
 // Cabinet form memory helpers
 const CABINET_FORM_MEMORY_KEY = 'cabinetFormMemory_v1';
@@ -44,33 +45,20 @@ interface CabinetFormMemory {
   height?: number;
   width?: number;
   depth?: number;
-  A?: string;
+  plywoodType?: string;
   backPanelPlywoodBrand?: string;
-  widthReduction?: number;
-  // ✅ IMPROVED: Store ALL front laminate codes from all panel types
   topPanelLaminateCode?: string;
-  bottomPanelLaminateCode?: string;
-  leftPanelLaminateCode?: string;
-  rightPanelLaminateCode?: string;
   backPanelLaminateCode?: string;
+  widthReduction?: number;
+  shutterPlywoodBrand?: string;
   shutterLaminateCode?: string;
-  centerPostLaminateCode?: string;
-  shelvesLaminateCode?: string;
-  // ✅ IMPROVED: Store ALL inner laminate codes from all panel types
-  topPanelInnerLaminateCode?: string;
-  bottomPanelInnerLaminateCode?: string;
-  leftPanelInnerLaminateCode?: string;
-  rightPanelInnerLaminateCode?: string;
-  backPanelInnerLaminateCode?: string;
   shutterInnerLaminateCode?: string;
-  centerPostInnerLaminateCode?: string;
-  shelvesInnerLaminateCode?: string;
 }
 
 // Load last cabinet form values from localStorage (with SSR safety)
 const loadCabinetFormMemory = (): Partial<CabinetFormMemory> => {
   if (typeof window === 'undefined') return {};
-  
+
   try {
     const stored = localStorage.getItem(CABINET_FORM_MEMORY_KEY);
     if (stored) {
@@ -92,37 +80,32 @@ function computeDisplayDims(panel: any) {
   let displayHeight = 0;  // Y
 
   if (type.includes('TOP') || type.includes('BOTTOM')) {
-    // TOP/BOTTOM: nomW=depth(X), nomH=width(Y) → depth×width display
-    displayWidth  = Number(panel.nomW ?? panel.w ?? panel.width ?? 0);    // X-axis (depth)
-    displayHeight = Number(panel.nomH ?? panel.h ?? panel.height ?? 0);   // Y-axis (width)
+    // TOP/BOTTOM: height -> X, width -> Y  (show X×Y format)
+    displayWidth = Number(panel.height ?? panel.nomH ?? panel.h ?? 0);   // X-axis (height)
+    displayHeight = Number(panel.width ?? panel.nomW ?? panel.w ?? 0);   // Y-axis (width)
   } else if (type.includes('LEFT') || type.includes('RIGHT')) {
-    // LEFT/RIGHT: nomW=depth(X), nomH=height(Y) → depth×height display
-    displayWidth  = Number(panel.nomW ?? panel.w ?? panel.width ?? 0);    // X-axis (depth)
-    displayHeight = Number(panel.nomH ?? panel.h ?? panel.height ?? 0);   // Y-axis (height)
+    // LEFT/RIGHT: height -> X, width -> Y  (show X×Y format)
+    displayWidth = Number(panel.height ?? panel.nomH ?? panel.h ?? 0);   // X-axis (height)
+    displayHeight = Number(panel.width ?? panel.nomW ?? panel.w ?? 0);   // Y-axis (width)
   } else {
-    // BACK: nomW=width(X), nomH=height(Y) → width×height display
-    displayWidth  = Number(panel.nomW ?? panel.w ?? panel.width ?? 0);    // X-axis (width)
-    displayHeight = Number(panel.nomH ?? panel.h ?? panel.height ?? 0);   // Y-axis (height)
+    // fallback: width -> X, height -> Y
+    displayWidth = Number(panel.width ?? panel.w ?? 0);
+    displayHeight = Number(panel.height ?? panel.h ?? 0);
   }
 
   // Store computed dims back on panel so renderer & PDF can use them directly
-  panel.displayWidth  = displayWidth;
+  panel.displayWidth = displayWidth;
   panel.displayHeight = displayHeight;
-  panel.displayLabel  = `${displayWidth}×${displayHeight}`;
+  panel.displayLabel = `${displayWidth}×${displayHeight}`;
   return panel;
 }
 
 // Save cabinet form values to localStorage (with SSR safety)
-// ✅ FIX: Merge with existing memory to prevent overwriting unrelated fields
-const saveCabinetFormMemory = (values: Partial<CabinetFormMemory>) => {
+const saveCabinetFormMemory = (values: CabinetFormMemory) => {
   if (typeof window === 'undefined') return;
-  
+
   try {
-    // Load existing memory first
-    const existingMemory = loadCabinetFormMemory();
-    // Merge new values with existing memory (new values override old ones)
-    const mergedMemory = { ...existingMemory, ...values };
-    localStorage.setItem(CABINET_FORM_MEMORY_KEY, JSON.stringify(mergedMemory));
+    localStorage.setItem(CABINET_FORM_MEMORY_KEY, JSON.stringify(values));
   } catch (error) {
     console.error('Failed to save cabinet form memory:', error);
   }
@@ -132,7 +115,7 @@ const saveCabinetFormMemory = (values: Partial<CabinetFormMemory>) => {
 const SHUTTER_FORM_MEMORY_KEY = 'shutterFormMemory_v1';
 
 interface ShutterFormMemory {
-  A?: string;
+  shutterPlywoodBrand?: string;
   shutterLaminateCode?: string;
   shutterInnerLaminateCode?: string;
 }
@@ -140,7 +123,7 @@ interface ShutterFormMemory {
 // Load last shutter form values from localStorage (with SSR safety)
 const loadShutterFormMemory = (): Partial<ShutterFormMemory> => {
   if (typeof window === 'undefined') return {};
-  
+
   try {
     const stored = localStorage.getItem(SHUTTER_FORM_MEMORY_KEY);
     if (stored) {
@@ -155,7 +138,7 @@ const loadShutterFormMemory = (): Partial<ShutterFormMemory> => {
 // Save shutter form values to localStorage (with SSR safety)
 const saveShutterFormMemory = (values: ShutterFormMemory) => {
   if (typeof window === 'undefined') return;
-  
+
   try {
     localStorage.setItem(SHUTTER_FORM_MEMORY_KEY, JSON.stringify(values));
   } catch (error) {
@@ -226,10 +209,10 @@ function multiPassOptimize(
  */
 function calculateEfficiency(sheets: Array<any>, parts: Array<any>): number {
   if (!sheets || sheets.length === 0) return 0;
-  
+
   const sheetArea = 1210 * 2420; // Standard sheet area
   const totalSheetArea = sheets.length * sheetArea;
-  
+
   // Calculate total parts area
   const totalPartsArea = parts.reduce((sum, part) => {
     const w = Number(part.w || part.nomW || 0);
@@ -237,22 +220,8 @@ function calculateEfficiency(sheets: Array<any>, parts: Array<any>): number {
     const qty = Number(part.qty || 1);
     return sum + (w * h * qty);
   }, 0);
-  
-  return totalSheetArea > 0 ? (totalPartsArea / totalSheetArea) * 100 : 0;
-}
 
-/**
- * Calculate dynamic optimization time based on panel count
- * Fewer panels = faster optimization, more panels = more thorough optimization
- * @param panelCount - Number of panels to optimize
- * @returns Optimization time in milliseconds
- */
-function getOptimizationTimeMs(panelCount: number): number {
-  if (panelCount <= 5) return 200;      // 1-5 panels: very fast
-  if (panelCount <= 15) return 400;     // 6-15 panels: fast
-  if (panelCount <= 30) return 600;     // 16-30 panels: medium
-  if (panelCount <= 50) return 1000;    // 31-50 panels: thorough
-  return 1500;                           // 50+ panels: very thorough
+  return totalSheetArea > 0 ? (totalPartsArea / totalSheetArea) * 100 : 0;
 }
 
 // Pixel-perfect PDF export - one sheet per PDF page (no slicing needed)
@@ -264,7 +233,7 @@ async function exportPreviewToPdf(options: {
 } = {}) {
   const sheetSelector = options.sheetSelector ?? ".cutting-sheet";
   const filename = options.filename ?? `cutting-list-${new Date().toISOString().slice(0, 10)}.pdf`;
-  
+
   // ✅ VERIFY AXIS MAPPING BEFORE PDF EXPORT
   console.group('📄 PDF EXPORT - AXIS MAPPING VERIFICATION');
   const allSheetElements = Array.from(document.querySelectorAll(sheetSelector)) as HTMLElement[];
@@ -279,10 +248,10 @@ async function exportPreviewToPdf(options: {
       const isPanelBOTTOM = panelNameText.toUpperCase().includes('BOTTOM');
       const isPanelLEFT = panelNameText.toUpperCase().includes('LEFT');
       const isPanelRIGHT = panelNameText.toUpperCase().includes('RIGHT');
-      
+
       if (isPanelTOP || isPanelBOTTOM || isPanelLEFT || isPanelRIGHT) {
         totalPanelsVerified++;
-        const hasCorrectAxis = (isPanelTOP || isPanelBOTTOM) ? 
+        const hasCorrectAxis = (isPanelTOP || isPanelBOTTOM) ?
           dimensionText.includes('564') || dimensionText.includes('450') :
           dimensionText.includes('450') || dimensionText.includes('800');
         if (hasCorrectAxis) correctAxisCount++;
@@ -292,7 +261,7 @@ async function exportPreviewToPdf(options: {
   });
   console.log(`✅ PDF VERIFICATION: ${correctAxisCount}/${totalPanelsVerified} panels have correct axis mapping`);
   console.groupEnd();
-  
+
   // Wait for fonts to load (ensure crisp text rendering)
   if (document.fonts && document.fonts.ready) {
     await document.fonts.ready;
@@ -301,14 +270,14 @@ async function exportPreviewToPdf(options: {
   // Find summary page and cutting sheet elements
   const summaryPage = document.querySelector(".summary-page") as HTMLElement | null;
   const sheetElements = Array.from(document.querySelectorAll(sheetSelector)) as HTMLElement[];
-  
+
   // Combine summary page + cutting sheets
   const allElements: HTMLElement[] = [];
   if (summaryPage) {
     allElements.push(summaryPage);
   }
   allElements.push(...sheetElements);
-  
+
   if (!allElements.length) {
     throw new Error(`No elements found to export`);
   }
@@ -363,7 +332,7 @@ async function exportPreviewToPdf(options: {
 
     // Add new page for subsequent elements
     if (i > 0) pdf.addPage();
-    
+
     // Add image to PDF page
     pdf.addImage(imgData, "PNG", x, y, imgWidthMm, imgHeightMm);
   }
@@ -402,7 +371,6 @@ export default function Home() {
   const [quickShutterVisible, setQuickShutterVisible] = useState(false);
   const [projectDetailsVisible, setProjectDetailsVisible] = useState(false);
   const [designCenterVisible, setDesignCenterVisible] = useState(false);
-  const [spreadsheetVisible, setSpreadsheetVisible] = useState(false);
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
   const [woodGrainSettingsVisible, setWoodGrainSettingsVisible] = useState(false);
   const [quickTypesHidden, setQuickTypesHidden] = useState(true);
@@ -439,7 +407,7 @@ export default function Home() {
     height: number;
     width: number;
     laminateCode: string;
-    A: string;
+    plywoodType: string;
     quantity: number;
     grainDirection: boolean;
     gaddi: boolean;
@@ -455,7 +423,7 @@ export default function Home() {
     height: number | string;
     width: number | string;
     laminateCode: string;
-    A: string;
+    plywoodType: string;
     quantity: number;
     grainDirection: boolean;
     gaddi: boolean;
@@ -464,24 +432,24 @@ export default function Home() {
     height: '',
     width: '',
     laminateCode: '',
-    A: 'Apple Ply 16mm BWP',
+    plywoodType: 'Apple Ply 16mm BWP',
     quantity: 1,
     grainDirection: false,
     gaddi: true
   });
   const shutterLaminateInputRef = useRef<HTMLInputElement>(null);
-  const [colourFrameForm, setColourFrameForm] = useState({ height: 2400, width: 80, laminateCode: '', quantity: 1, note: '', customLaminateCode: '', A: 'Apple Ply 16mm BWP', grainDirection: false });
+  const [colourFrameForm, setColourFrameForm] = useState({ height: 2400, width: 80, laminateCode: '', quantity: 1, note: '', customLaminateCode: '', plywoodType: 'Apple Ply 16mm BWP', grainDirection: false });
   const [colourFrameEnabled, setColourFrameEnabled] = useState(false);
   const [gaddiForm, setGaddiForm] = useState({ height: 2400, width: 80, laminateCode: 'Manual Type', quantity: 0, note: '', customLaminateCode: '', thickness: '' });
   const [gaddiEnabled, setGaddiEnabled] = useState(false);
   const [visualPreviewVisible, setVisualPreviewVisible] = useState(false);
-  
+
   // Quotation state
   const [quotationNumber, setQuotationNumber] = useState('');
   const [quotationDate, setQuotationDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [quotationNotes, setQuotationNotes] = useState('');
   const [quotationDetailsVisible, setQuotationDetailsVisible] = useState(false);
-  
+
   // Master Settings state
   const [masterSettingsVisible, setMasterSettingsVisible] = useState(false);
   const [masterPlywoodBrand, setMasterPlywoodBrand] = useState('Apple Ply 16mm BWP');
@@ -496,15 +464,13 @@ export default function Home() {
   const [masterCustomLaminateInput, setMasterCustomLaminateInput] = useState('');
   const [masterCustomInnerLaminateInput, setMasterCustomInnerLaminateInput] = useState('');
   const [masterCustomPlywoodInput, setMasterCustomPlywoodInput] = useState('');
-  const masterPlywoodInputRef = useRef<HTMLInputElement>(null);
-  const masterPlywoodDropdownRef = useRef<HTMLDetailsElement>(null);
   const masterLaminateInputRef = useRef<HTMLInputElement>(null);
   const masterInnerLaminateInputRef = useRef<HTMLInputElement>(null);
   const masterLaminateDropdownRef = useRef<HTMLDetailsElement>(null); // ✅ Ref to control dropdown
-  
+
   // ✅ CRITICAL FIX: Persist tracking across page refreshes using localStorage
   const LAMINATE_TRACKING_KEY = 'userSelectedLaminates_v1';
-  
+
   // Load initial tracking from localStorage
   const loadLaminateTracking = (): Set<string> => {
     if (typeof window === 'undefined') return new Set();
@@ -519,10 +485,10 @@ export default function Home() {
     }
     return new Set();
   };
-  
+
   // Track which laminate fields the user has explicitly selected
   const [userSelectedLaminates, setUserSelectedLaminates] = useState<Set<string>>(loadLaminateTracking);
-  
+
   // Save tracking to localStorage whenever it changes
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -530,7 +496,7 @@ export default function Home() {
       localStorage.setItem(LAMINATE_TRACKING_KEY, JSON.stringify(arr));
     }
   }, [userSelectedLaminates]);
-  
+
   // Helper to set laminate value and track source (user vs auto)
   const updateLaminateWithTracking = (field: string, value: string, source: 'user' | 'auto') => {
     console.log(`📝 Updating ${field} = "${value}" (source: ${source})`);
@@ -543,12 +509,12 @@ export default function Home() {
       });
     }
   };
-  
+
   // Helper to mark a field as user-confirmed without changing value
   const markLaminateAsUserSelected = (field: string) => {
     setUserSelectedLaminates(prev => new Set(prev).add(field));
   };
-  
+
   // Helper to clear user-selected tracking (on reset, mode switch, etc.)
   const clearUserLaminateTracking = () => {
     setUserSelectedLaminates(new Set());
@@ -556,14 +522,14 @@ export default function Home() {
       localStorage.removeItem(LAMINATE_TRACKING_KEY);
     }
   };
-  
+
   // Sheet Size and Kerf Settings
   const [sheetWidth, setSheetWidth] = useState(1210);
   const [sheetHeight, setSheetHeight] = useState(2420);
   const [kerf, setKerf] = useState(5);
-  
+
   // Individual cabinet type configurations
-  const [cabinetConfigs, setCabinetConfigs] = useState<Record<CabinetType, {height: number, width: number, quantity: number, shutterQuantity: number}>>({
+  const [cabinetConfigs, setCabinetConfigs] = useState<Record<CabinetType, { height: number, width: number, quantity: number, shutterQuantity: number }>>({
     single: { height: 0, width: 0, quantity: 1, shutterQuantity: 1 },
     double: { height: 0, width: 0, quantity: 1, shutterQuantity: 2 },
     triple: { height: 0, width: 0, quantity: 1, shutterQuantity: 3 },
@@ -577,10 +543,10 @@ export default function Home() {
     custom: { height: 0, width: 0, quantity: 1, shutterQuantity: 2 }
   });
 
-  const [currentDate] = useState(() => new Date().toLocaleDateString('en-US', { 
-    year: 'numeric', 
-    month: 'long', 
-    day: 'numeric' 
+  const [currentDate] = useState(() => new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
   }));
 
   // Load stored form memory
@@ -593,7 +559,6 @@ export default function Home() {
       name: `Shutter #${cabinets.length + 1}`,
       type: 'single',
       configurationMode: 'advanced', // ✅ FIX: Initialize form with configurationMode
-      roomName: storedMemory.roomName ?? 'Kitchen',
       height: storedMemory.height ?? 800,
       width: storedMemory.width ?? 600,
       depth: storedMemory.depth ?? 450,
@@ -601,12 +566,10 @@ export default function Home() {
       centerPostQuantity: 1,
       centerPostHeight: 764,
       centerPostDepth: 430,
-      centerPostLaminateCode: storedMemory.centerPostLaminateCode ?? '',
-      centerPostInnerLaminateCode: storedMemory.centerPostInnerLaminateCode ?? 'off white',
+      centerPostLaminateCode: '',
       shelvesQuantity: 1,
       shelvesEnabled: false,
-      shelvesLaminateCode: storedMemory.shelvesLaminateCode ?? '',
-      shelvesInnerLaminateCode: storedMemory.shelvesInnerLaminateCode ?? 'off white',
+      shelvesLaminateCode: '',
       widthReduction: storedMemory.widthReduction ?? 36,
 
       shuttersEnabled: false,
@@ -618,18 +581,21 @@ export default function Home() {
       shutterLaminateCode: storedMemory.shutterLaminateCode ?? '',
       shutterInnerLaminateCode: storedMemory.shutterInnerLaminateCode ?? '',
       topPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
-      bottomPanelLaminateCode: storedMemory.bottomPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
-      leftPanelLaminateCode: storedMemory.leftPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
-      rightPanelLaminateCode: storedMemory.rightPanelLaminateCode ?? storedMemory.topPanelLaminateCode ?? '',
+      bottomPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
+      leftPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
+      rightPanelLaminateCode: storedMemory.topPanelLaminateCode ?? '',
       backPanelLaminateCode: storedMemory.backPanelLaminateCode ?? '',
-      topPanelInnerLaminateCode: storedMemory.topPanelInnerLaminateCode ?? 'off white',
-      bottomPanelInnerLaminateCode: storedMemory.bottomPanelInnerLaminateCode ?? 'off white',
-      leftPanelInnerLaminateCode: storedMemory.leftPanelInnerLaminateCode ?? 'off white',
-      rightPanelInnerLaminateCode: storedMemory.rightPanelInnerLaminateCode ?? 'off white',
-      backPanelInnerLaminateCode: storedMemory.backPanelInnerLaminateCode ?? 'off white',
-      A: storedMemory.A || 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: storedMemory.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
-      innerLaminateCode: storedMemory.topPanelInnerLaminateCode ?? 'off white',
+      topPanelInnerLaminateCode: 'off white',
+      bottomPanelInnerLaminateCode: 'off white',
+      leftPanelInnerLaminateCode: 'off white',
+      rightPanelInnerLaminateCode: 'off white',
+      backPanelInnerLaminateCode: 'off white',
+      centerPostInnerLaminateCode: 'off white', // ✅ FIX: Add missing for grain direction lookup
+      shelvesInnerLaminateCode: 'off white', // ✅ FIX: Add missing for grain direction lookup
+      plywoodType: storedMemory.plywoodType ?? 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: storedMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
+      shutterPlywoodBrand: storedMemory.shutterPlywoodBrand ?? (storedMemory.plywoodType ?? 'Apple Ply 16mm BWP'),
+      innerLaminateCode: 'off white',
       // Grain direction fields - default to false for new forms
       topPanelGrainDirection: false,
       bottomPanelGrainDirection: false,
@@ -674,144 +640,51 @@ export default function Home() {
   // Prevents calculations running when database fetch fails or returns empty
   // ✅ OPTIMIZATION: Show form immediately, don't wait for wood grains to load
   const woodGrainsReady = true; // Always show form instantly, preferences load in background
-  
+
 
   // ✅ SAVE SHUTTER LAMINATE CODES IN REAL-TIME (auto-save on change)
   // Use useRef to prevent infinite loop from watchedValues changing on every render
-  const prevShutterValuesRef = useRef<{front?: string; inner?: string}>({});
+  const prevShutterValuesRef = useRef<{ front?: string; inner?: string }>({});
   const prevTopLaminateRef = useRef<string>('');
   const prevBottomLaminateRef = useRef<string>('');
   const prevLeftLaminateRef = useRef<string>('');
   const prevRightLaminateRef = useRef<string>('');
   const prevBackLaminateRef = useRef<string>('');
   const prevShutterLaminateRef = useRef<string>('');
-  
+
   // ✅ DIRECT LINK: Auto-update grain directions when laminate codes change in form
   // FIX: Use individual field watches to prevent infinite loop from watchedValues object reference changing
   // IMPORTANT: Define watches BEFORE using them in useEffects
   const topPanelLaminateCode = form.watch('topPanelLaminateCode');
-  const topPanelInnerLaminateCode = form.watch('topPanelInnerLaminateCode');
   const bottomPanelLaminateCode = form.watch('bottomPanelLaminateCode');
-  const bottomPanelInnerLaminateCode = form.watch('bottomPanelInnerLaminateCode');
   const leftPanelLaminateCode = form.watch('leftPanelLaminateCode');
-  const leftPanelInnerLaminateCode = form.watch('leftPanelInnerLaminateCode');
   const rightPanelLaminateCode = form.watch('rightPanelLaminateCode');
-  const rightPanelInnerLaminateCode = form.watch('rightPanelInnerLaminateCode');
   const backPanelLaminateCode = form.watch('backPanelLaminateCode');
-  const backPanelInnerLaminateCode = form.watch('backPanelInnerLaminateCode');
   const shutterLaminateCode = form.watch('shutterLaminateCode');
-  const A = form.watch('A');
+  const shutterPlywoodBrand = form.watch('shutterPlywoodBrand');
   const shutterInnerLaminateCode = form.watch('shutterInnerLaminateCode');
-  
-  // ✅ REAL-TIME MEMORY: Watch all core form fields
-  const formHeight = form.watch('height');
-  const formWidth = form.watch('width');
-  const formDepth = form.watch('depth');
-  const formWidthReduction = form.watch('widthReduction');
-  const formRoomName = form.watch('roomName');
-  const formBackPanelPlywoodBrand = form.watch('backPanelPlywoodBrand');
-  
-  // ✅ REAL-TIME SAVE: Save plywood, dimensions, and room name when they change
-  const prevCoreFieldsRef = useRef<{
-    A?: string; backPanelPlywoodBrand?: string; height?: number; width?: number; depth?: number; widthReduction?: number; roomName?: string;
-  }>({});
-  
-  useEffect(() => {
-    const aChanged = prevCoreFieldsRef.current.A !== A;
-    const backPanelPlywoodChanged = prevCoreFieldsRef.current.backPanelPlywoodBrand !== formBackPanelPlywoodBrand;
-    const heightChanged = prevCoreFieldsRef.current.height !== formHeight;
-    const widthChanged = prevCoreFieldsRef.current.width !== formWidth;
-    const depthChanged = prevCoreFieldsRef.current.depth !== formDepth;
-    const widthReductionChanged = prevCoreFieldsRef.current.widthReduction !== formWidthReduction;
-    const roomNameChanged = prevCoreFieldsRef.current.roomName !== formRoomName;
-    
-    if (aChanged || backPanelPlywoodChanged || heightChanged || widthChanged || depthChanged || widthReductionChanged || roomNameChanged) {
-      // Save to memory immediately when any core field changes
-      saveCabinetFormMemory({
-        A: A || undefined,
-        backPanelPlywoodBrand: formBackPanelPlywoodBrand || undefined,
-        height: formHeight || undefined,
-        width: formWidth || undefined,
-        depth: formDepth || undefined,
-        widthReduction: formWidthReduction ?? undefined,
-        roomName: formRoomName || undefined,
-      });
-      // Update refs
-      prevCoreFieldsRef.current = {
-        A,
-        backPanelPlywoodBrand: formBackPanelPlywoodBrand,
-        height: formHeight,
-        width: formWidth,
-        depth: formDepth,
-        widthReduction: formWidthReduction,
-        roomName: formRoomName,
-      };
-    }
-  }, [A, formBackPanelPlywoodBrand, formHeight, formWidth, formDepth, formWidthReduction, formRoomName]);
-  
-  // ✅ AUTO-SYNC: Shutter laminate inherits main/master laminate codes (time-saver)
-  useEffect(() => {
-    if (masterLaminateCode && !shutterLaminateCode) {
-      form.setValue('shutterLaminateCode', masterLaminateCode);
-    }
-    if (masterInnerLaminateCode && !shutterInnerLaminateCode) {
-      form.setValue('shutterInnerLaminateCode', masterInnerLaminateCode);
-    }
-  }, [masterLaminateCode, masterInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
 
-  // ✅ AUTO-SYNC: Shutter laminates sync from TOP panel's front and inner laminates
-  useEffect(() => {
-    if (topPanelLaminateCode && topPanelLaminateCode !== shutterLaminateCode) {
-      form.setValue('shutterLaminateCode', topPanelLaminateCode);
-    }
-    if (topPanelInnerLaminateCode && topPanelInnerLaminateCode !== shutterInnerLaminateCode) {
-      form.setValue('shutterInnerLaminateCode', topPanelInnerLaminateCode);
-    }
-  }, [topPanelLaminateCode, topPanelInnerLaminateCode, shutterLaminateCode, shutterInnerLaminateCode, form]);
-
-  // ✅ AUTO-SYNC: Center Post and Shelves inherit cabinet Inner Laminate code for both sides (time-saver)
-  // Logic: Use cabinet Inner Laminate for front and inner sides
-  useEffect(() => {
-    if (masterInnerLaminateCode) {
-      // Sync Center Post - both front and inner sides
-      if (!form.getValues('centerPostLaminateCode')) {
-        form.setValue('centerPostLaminateCode', masterInnerLaminateCode);
-      }
-      if (!form.getValues('centerPostInnerLaminateCode')) {
-        form.setValue('centerPostInnerLaminateCode', masterInnerLaminateCode);
-      }
-      
-      // Sync Shelves - both front and inner sides
-      if (!form.getValues('shelvesLaminateCode')) {
-        form.setValue('shelvesLaminateCode', masterInnerLaminateCode);
-      }
-      if (!form.getValues('shelvesInnerLaminateCode')) {
-        form.setValue('shelvesInnerLaminateCode', masterInnerLaminateCode);
-      }
-    }
-  }, [masterInnerLaminateCode, form]);
-  
   // ✅ AUTO-SYNC: Colour Frame inherits Quick Shutter materials for consolidation
   useEffect(() => {
     if (colourFrameEnabled && shutterLaminateCode && shutterInnerLaminateCode) {
       const composedCode = composeLaminateCode(shutterLaminateCode, shutterInnerLaminateCode);
       setColourFrameForm(prev => ({
         ...prev,
-        A: A || 'Apple Ply 16mm BWP',
+        plywoodType: shutterPlywoodBrand || 'Apple Ply 16mm BWP',
         laminateCode: composedCode
       }));
     }
-  }, [colourFrameEnabled, shutterLaminateCode, shutterInnerLaminateCode, A]);
-  
+  }, [colourFrameEnabled, shutterLaminateCode, shutterInnerLaminateCode, shutterPlywoodBrand]);
+
   useEffect(() => {
     // Only save if values actually changed (not just form re-renders)
     const frontChanged = prevShutterValuesRef.current.front !== shutterLaminateCode;
     const innerChanged = prevShutterValuesRef.current.inner !== shutterInnerLaminateCode;
-    
+
     if (frontChanged || innerChanged) {
       if (shutterLaminateCode || shutterInnerLaminateCode) {
         saveCabinetFormMemory({
-          A,
+          shutterPlywoodBrand,
           shutterLaminateCode,
           shutterInnerLaminateCode
         });
@@ -822,64 +695,12 @@ export default function Home() {
         };
       }
     }
-  }, [shutterLaminateCode, shutterInnerLaminateCode, A]);
-  
-  // ✅ REAL-TIME SAVE: Save all individual panel laminate codes to memory when they change
-  const prevPanelLaminatesRef = useRef<{
-    top?: string; bottom?: string; left?: string; right?: string; back?: string;
-    topInner?: string; bottomInner?: string; leftInner?: string; rightInner?: string; backInner?: string;
-  }>({});
-  
-  useEffect(() => {
-    const topChanged = prevPanelLaminatesRef.current.top !== topPanelLaminateCode;
-    const bottomChanged = prevPanelLaminatesRef.current.bottom !== bottomPanelLaminateCode;
-    const leftChanged = prevPanelLaminatesRef.current.left !== leftPanelLaminateCode;
-    const rightChanged = prevPanelLaminatesRef.current.right !== rightPanelLaminateCode;
-    const backChanged = prevPanelLaminatesRef.current.back !== backPanelLaminateCode;
-    const topInnerChanged = prevPanelLaminatesRef.current.topInner !== topPanelInnerLaminateCode;
-    const bottomInnerChanged = prevPanelLaminatesRef.current.bottomInner !== bottomPanelInnerLaminateCode;
-    const leftInnerChanged = prevPanelLaminatesRef.current.leftInner !== leftPanelInnerLaminateCode;
-    const rightInnerChanged = prevPanelLaminatesRef.current.rightInner !== rightPanelInnerLaminateCode;
-    const backInnerChanged = prevPanelLaminatesRef.current.backInner !== backPanelInnerLaminateCode;
-    
-    if (topChanged || bottomChanged || leftChanged || rightChanged || backChanged ||
-        topInnerChanged || bottomInnerChanged || leftInnerChanged || rightInnerChanged || backInnerChanged) {
-      // Save to memory immediately when any laminate field changes
-      saveCabinetFormMemory({
-        topPanelLaminateCode: topPanelLaminateCode || undefined,
-        bottomPanelLaminateCode: bottomPanelLaminateCode || undefined,
-        leftPanelLaminateCode: leftPanelLaminateCode || undefined,
-        rightPanelLaminateCode: rightPanelLaminateCode || undefined,
-        backPanelLaminateCode: backPanelLaminateCode || undefined,
-        topPanelInnerLaminateCode: topPanelInnerLaminateCode || undefined,
-        bottomPanelInnerLaminateCode: bottomPanelInnerLaminateCode || undefined,
-        leftPanelInnerLaminateCode: leftPanelInnerLaminateCode || undefined,
-        rightPanelInnerLaminateCode: rightPanelInnerLaminateCode || undefined,
-        backPanelInnerLaminateCode: backPanelInnerLaminateCode || undefined,
-      });
-      // Update refs
-      prevPanelLaminatesRef.current = {
-        top: topPanelLaminateCode,
-        bottom: bottomPanelLaminateCode,
-        left: leftPanelLaminateCode,
-        right: rightPanelLaminateCode,
-        back: backPanelLaminateCode,
-        topInner: topPanelInnerLaminateCode,
-        bottomInner: bottomPanelInnerLaminateCode,
-        leftInner: leftPanelInnerLaminateCode,
-        rightInner: rightPanelInnerLaminateCode,
-        backInner: backPanelInnerLaminateCode,
-      };
-    }
-  }, [
-    topPanelLaminateCode, bottomPanelLaminateCode, leftPanelLaminateCode, rightPanelLaminateCode, backPanelLaminateCode,
-    topPanelInnerLaminateCode, bottomPanelInnerLaminateCode, leftPanelInnerLaminateCode, rightPanelInnerLaminateCode, backPanelInnerLaminateCode
-  ]);
-  
+  }, [shutterLaminateCode, shutterInnerLaminateCode, shutterPlywoodBrand]);
+
   useEffect(() => {
     // Only run if preferences are loaded
     if (!woodGrainsReady) return;
-    
+
     // Compute grain direction for each panel based on its laminate code from database
     const topCode = (topPanelLaminateCode || '').split('+')[0].trim();
     const bottomCode = (bottomPanelLaminateCode || '').split('+')[0].trim();
@@ -887,7 +708,7 @@ export default function Home() {
     const rightCode = (rightPanelLaminateCode || '').split('+')[0].trim();
     const backCode = (backPanelLaminateCode || '').split('+')[0].trim();
     const shutterCode = (shutterLaminateCode || '').split('+')[0].trim();
-    
+
     // Update grain directions based on database preferences (only if value exists in preferences)
     if (topCode && woodGrainsPreferences[topCode] !== undefined && (topPanelLaminateCode !== prevTopLaminateRef.current)) {
       form.setValue('topPanelGrainDirection', Boolean(woodGrainsPreferences[topCode]));
@@ -926,7 +747,7 @@ export default function Home() {
   ]);
 
   // ✅ FIXED: Fetch from central godown instead of deprecated laminate-memory
-  const { data: laminateCodeGodownData = [], isLoading: isLaminateMemoryLoading } = useQuery<LaminateCode[]>({
+  const { data: laminateCodeGodownData = [], isLoading: isLaminateMemoryLoading } = useQuery<LaminateCodeGodown[]>({
     queryKey: ['/api/laminate-code-godown'],
   });
 
@@ -949,23 +770,23 @@ export default function Home() {
         ...prev,
         [laminateCode]: woodGrainsEnabled
       }));
-      
+
       // Instantly update ALL cabinets that use this laminate code
-      const isRedColor = laminateCode.toLowerCase().includes('red') || 
-                        laminateCode.toLowerCase().includes('rose') ||
-                        laminateCode.toLowerCase().includes('pink');
-      
+      const isRedColor = laminateCode.toLowerCase().includes('red') ||
+        laminateCode.toLowerCase().includes('rose') ||
+        laminateCode.toLowerCase().includes('pink');
+
       // Log visual feedback for red colors (toast would need to be called elsewhere)
       if (isRedColor && woodGrainsEnabled) {
         console.log(`🔴 Red Wood Grain Activated! All cabinets with ${laminateCode} updated instantly`);
       }
-      
+
       // Update all existing cabinets that use this specific laminate code
-      setCabinets(prevCabinets => 
+      setCabinets(prevCabinets =>
         prevCabinets.map(cabinet => {
           let updated = { ...cabinet };
           let hasChanges = false;
-          
+
           // Check and update each panel if it uses the target laminate code
           if (cabinet.topPanelLaminateCode === laminateCode) {
             updated.topPanelGrainDirection = woodGrainsEnabled;
@@ -991,16 +812,16 @@ export default function Home() {
             updated.shutterGrainDirection = woodGrainsEnabled;
             hasChanges = true;
           }
-          
+
           // For red colors, apply extra visual emphasis
           if (hasChanges && isRedColor) {
             console.log(`🔴 Updated cabinet ${cabinet.name || cabinet.id} with red wood grain for ${laminateCode}`);
           }
-          
+
           return updated;
         })
       );
-      
+
       // Also update the current form if it uses this laminate code
       const currentFormValues = form.getValues();
       if (currentFormValues.topPanelLaminateCode === laminateCode) {
@@ -1062,23 +883,28 @@ export default function Home() {
   // Convert database response to simple string array for compatibility
   const globalPlywoodBrandMemory = plywoodBrandMemoryData.map(item => item.brand);
 
-  // State for custom laminate inputs (display/typing only, not for form data)
+  // State for laminate section (Top Panel)
+  const [laminateSelection, setLaminateSelection] = useState('');
   const [topCustomLaminateInput, setTopCustomLaminateInput] = useState('');
   const [saveStatus, setSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Bottom Panel)
+  const [bottomLaminateSelection, setBottomLaminateSelection] = useState('');
   const [bottomCustomLaminateInput, setBottomCustomLaminateInput] = useState('');
   const [bottomSaveStatus, setBottomSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Left Panel)
+  const [leftLaminateSelection, setLeftLaminateSelection] = useState('');
   const [leftCustomLaminateInput, setLeftCustomLaminateInput] = useState('');
   const [leftSaveStatus, setLeftSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Right Panel)
+  const [rightLaminateSelection, setRightLaminateSelection] = useState('');
   const [rightCustomLaminateInput, setRightCustomLaminateInput] = useState('');
   const [rightSaveStatus, setRightSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
   // State for laminate section (Back Panel)
+  const [backLaminateSelection, setBackLaminateSelection] = useState('');
   const [backCustomLaminateInput, setBackCustomLaminateInput] = useState('');
   const [backSaveStatus, setBackSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
@@ -1091,7 +917,7 @@ export default function Home() {
 
   // Focus Management System for Auto-Focus Next Field
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
-  
+
   // Register a ref for a field
   const registerFieldRef = (fieldName: string, element: HTMLElement | null) => {
     fieldRefs.current[fieldName] = element;
@@ -1119,20 +945,20 @@ export default function Home() {
     // Check which sequence this field belongs to
     let sequence = collapsibleFieldSequence;
     let currentIndex = collapsibleFieldSequence.indexOf(currentFieldName);
-    
+
     if (currentIndex === -1) {
       // Try advanced panel sequence
       sequence = advancedPanelFieldSequence;
       currentIndex = advancedPanelFieldSequence.indexOf(currentFieldName);
     }
-    
+
     if (currentIndex === -1) return; // Not in any sequence
-    
+
     // Find next focusable field
     for (let i = currentIndex + 1; i < sequence.length; i++) {
       const nextFieldName = sequence[i];
       const nextElement = fieldRefs.current[nextFieldName];
-      
+
       if (nextElement && !nextElement.hasAttribute('disabled')) {
         // Small delay to ensure popover is closed before focusing
         setTimeout(() => {
@@ -1154,10 +980,8 @@ export default function Home() {
   const [customShutterCustomLaminateInput, setCustomShutterCustomLaminateInput] = useState('');
   const [customShutterSaveStatus, setCustomShutterSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
-  // State for Back Panel Plywood Brand selection - use memory with 6mm BWP default
-  const [backPanelPlywoodSelection, setBackPanelPlywoodSelection] = useState(() => {
-    return storedMemory.backPanelPlywoodBrand || 'Apple ply 6mm BWP';
-  });
+  // State for Back Panel Plywood Brand selection
+  const [backPanelPlywoodSelection, setBackPanelPlywoodSelection] = useState('');
   const [backPanelPlywoodInput, setBackPanelPlywoodInput] = useState('');
   const [backPanelPlywoodSaveStatus, setBackPanelPlywoodSaveStatus] = useState<'typing' | 'saved' | 'ready' | ''>('');
 
@@ -1166,7 +990,7 @@ export default function Home() {
   const [bottomGaddiEnabled, setBottomGaddiEnabled] = useState(true);
   const [leftGaddiEnabled, setLeftGaddiEnabled] = useState(true);
   const [rightGaddiEnabled, setRightGaddiEnabled] = useState(true);
-  
+
   // Master Gaddi toggle handler
   const toggleAllGaddi = (enabled: boolean) => {
     setTopGaddiEnabled(enabled);
@@ -1174,7 +998,7 @@ export default function Home() {
     setLeftGaddiEnabled(enabled);
     setRightGaddiEnabled(enabled);
   };
-  
+
   // Compute master Gaddi state (all enabled = true, else false)
   const allGaddiEnabled = topGaddiEnabled && bottomGaddiEnabled && leftGaddiEnabled && rightGaddiEnabled;
   const anyGaddiEnabled = topGaddiEnabled || bottomGaddiEnabled || leftGaddiEnabled || rightGaddiEnabled;
@@ -1202,7 +1026,7 @@ export default function Home() {
   const [cabinetPlywoodOpen, setCabinetPlywoodOpen] = useState(false);
   const [backPanelPlywoodOpen, setBackPanelPlywoodOpen] = useState(false);
   const [shutterPlywoodOpen, setShutterPlywoodOpen] = useState(false);
-  
+
   // Basic mode (Quick Shutter) popovers - separate from Advanced mode to avoid interference
   const [basicShutterLaminateOpen, setBasicShutterLaminateOpen] = useState(false);
   const [basicShutterInnerLaminateOpen, setBasicShutterInnerLaminateOpen] = useState(false);
@@ -1214,11 +1038,11 @@ export default function Home() {
   const syncPlywoodBrand = (newValue: string, source: 'main' | 'back') => {
     if (currentSyncOrigin.current === 'plywood-sync') return;
     currentSyncOrigin.current = 'plywood-sync';
-    
+
     // Update main plywood type (used by Top, Bottom, Left, Right panels)
     // Back panel plywood is now independent
-    form.setValue('A', newValue);
-    
+    form.setValue('plywoodType', newValue);
+
     setTimeout(() => {
       currentSyncOrigin.current = null;
     }, 100);
@@ -1230,35 +1054,39 @@ export default function Home() {
   const syncLaminateCode = async (newValue: string, source: 'top' | 'bottom' | 'left' | 'right') => {
     if (currentSyncOrigin.current === 'laminate-code-sync') return;
     currentSyncOrigin.current = 'laminate-code-sync';
-    
+
     // ✅ DIRECT LINK: Look up wood grain preference from database
     const baseCode = newValue.split('+')[0].trim();
     const woodGrainsEnabled = woodGrainsPreferences[baseCode] === true;
-    
+
     // Sync to Top/Bottom/Left/Right panels only (back panel is independent)
     // Mark synced panels as user-selected since the origin was a user action
     // Also auto-mark paired Inner Laminates as user-selected
     if (source !== 'top') {
       updateLaminateWithTracking('topPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('topPanelInnerLaminateCode');
+      setLaminateSelection(newValue);
       form.setValue('topPanelGrainDirection', woodGrainsEnabled);
     }
     if (source !== 'bottom') {
       updateLaminateWithTracking('bottomPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('bottomPanelInnerLaminateCode');
+      setBottomLaminateSelection(newValue);
       form.setValue('bottomPanelGrainDirection', woodGrainsEnabled);
     }
     if (source !== 'left') {
       updateLaminateWithTracking('leftPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('leftPanelInnerLaminateCode');
+      setLeftLaminateSelection(newValue);
       form.setValue('leftPanelGrainDirection', woodGrainsEnabled);
     }
     if (source !== 'right') {
       updateLaminateWithTracking('rightPanelLaminateCode', newValue, 'user');
       markLaminateAsUserSelected('rightPanelInnerLaminateCode');
+      setRightLaminateSelection(newValue);
       form.setValue('rightPanelGrainDirection', woodGrainsEnabled);
     }
-    
+
     setTimeout(() => {
       currentSyncOrigin.current = null;
     }, 100);
@@ -1268,9 +1096,9 @@ export default function Home() {
   const syncCabinetConfigFrontLaminate = (newValue: string, markAsUserSelected: boolean = false) => {
     if (currentSyncOrigin.current === 'cabinet-front-sync') return;
     if (!panelsLinked) return; // Only sync when panels are linked
-    
+
     currentSyncOrigin.current = 'cabinet-front-sync';
-    
+
     // Update ALL panel front laminate codes (Top/Bottom/Left/Right/Back)
     // When user selects at cabinet level, it applies to all panels
     if (markAsUserSelected) {
@@ -1286,7 +1114,12 @@ export default function Home() {
       form.setValue('rightPanelLaminateCode', newValue);
       form.setValue('backPanelLaminateCode', newValue);
     }
-    
+
+    setLaminateSelection(newValue);
+    setBottomLaminateSelection(newValue);
+    setLeftLaminateSelection(newValue);
+    setRightLaminateSelection(newValue);
+
     setTimeout(() => {
       currentSyncOrigin.current = null;
     }, 100);
@@ -1296,9 +1129,9 @@ export default function Home() {
   const syncCabinetConfigInnerLaminate = (newValue: string, markAsUserSelected: boolean = false) => {
     if (currentSyncOrigin.current === 'cabinet-inner-sync') return;
     if (!panelsLinked) return; // Only sync when panels are linked
-    
+
     currentSyncOrigin.current = 'cabinet-inner-sync';
-    
+
     // Update ALL panel inner laminate codes (Top/Bottom/Left/Right/Back)
     // When user selects at cabinet level, it applies to all panels
     if (markAsUserSelected) {
@@ -1314,7 +1147,7 @@ export default function Home() {
       form.setValue('rightPanelInnerLaminateCode', newValue);
       form.setValue('backPanelInnerLaminateCode', newValue);
     }
-    
+
     setTimeout(() => {
       currentSyncOrigin.current = null;
     }, 100);
@@ -1322,15 +1155,15 @@ export default function Home() {
 
   // Master Settings: Update ALL cabinets when master plywood changes (main panels only)
   const updateAllCabinetsPlywood = (newPlywood: string) => {
-    updateCabinets((prevCabinets: Cabinet[]) => 
+    updateCabinets((prevCabinets: Cabinet[]) =>
       prevCabinets.map(cabinet => ({
         ...cabinet,
-        A: newPlywood
+        plywoodType: newPlywood
         // backPanelPlywoodBrand is now independent
       }))
     );
     // Update current cabinet form
-    form.setValue('A', newPlywood);
+    form.setValue('plywoodType', newPlywood);
     // backPanelPlywoodBrand is now independent
   };
 
@@ -1339,7 +1172,7 @@ export default function Home() {
 
   // Master Settings: Update ALL cabinets when master laminate code changes
   const updateAllCabinetsLaminateCode = (newCode: string) => {
-    updateCabinets((prevCabinets: Cabinet[]) => 
+    updateCabinets((prevCabinets: Cabinet[]) =>
       prevCabinets.map(cabinet => ({
         ...cabinet,
         topPanelLaminateCode: newCode,
@@ -1357,11 +1190,17 @@ export default function Home() {
     form.setValue('rightPanelLaminateCode', newCode);
     form.setValue('backPanelLaminateCode', newCode);
     form.setValue('shutterLaminateCode', newCode);
+    // Update selection states
+    setLaminateSelection(newCode);
+    setBottomLaminateSelection(newCode);
+    setLeftLaminateSelection(newCode);
+    setRightLaminateSelection(newCode);
+    setBackLaminateSelection(newCode);
   };
 
   // Master Settings: Update ALL cabinets when master inner laminate code changes
   const updateAllCabinetsInnerLaminateCode = (newCode: string) => {
-    updateCabinets((prevCabinets: Cabinet[]) => 
+    updateCabinets((prevCabinets: Cabinet[]) =>
       prevCabinets.map(cabinet => ({
         ...cabinet,
         innerLaminateCode: newCode
@@ -1373,7 +1212,7 @@ export default function Home() {
 
   // Master Settings: Update ALL cabinets when master wood grains changes (Front Laminate)
   const updateAllCabinetsWoodGrains = (enabled: boolean) => {
-    updateCabinets((prevCabinets: Cabinet[]) => 
+    updateCabinets((prevCabinets: Cabinet[]) =>
       prevCabinets.map(cabinet => ({
         ...cabinet,
         topPanelGrainDirection: enabled,
@@ -1395,7 +1234,7 @@ export default function Home() {
 
   // Master Settings: Update ALL cabinets when master inner wood grains changes (Inner Laminate)
   const updateAllCabinetsInnerWoodGrains = (enabled: boolean) => {
-    updateCabinets((prevCabinets: Cabinet[]) => 
+    updateCabinets((prevCabinets: Cabinet[]) =>
       prevCabinets.map(cabinet => ({
         ...cabinet,
         topPanelInnerGrainDirection: enabled,
@@ -1426,9 +1265,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          cabinetSectionRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          cabinetSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1441,9 +1280,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          projectDetailsSectionRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          projectDetailsSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1456,9 +1295,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          plywoodLaminatesRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          plywoodLaminatesRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1471,9 +1310,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          centerPostSectionRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          centerPostSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1486,9 +1325,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          centerPostSectionRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          centerPostSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1501,9 +1340,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          shutterConfigSectionRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          shutterConfigSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1516,9 +1355,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          individualPanelsRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          individualPanelsRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1531,9 +1370,9 @@ export default function Home() {
       // Double requestAnimationFrame to ensure DOM is fully rendered and laid out
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          designCenterSectionRef.current?.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+          designCenterSectionRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
           });
         });
       });
@@ -1548,14 +1387,14 @@ export default function Home() {
     const loadMasterSettingsMemory = async () => {
       try {
         const response = await fetch('/api/master-settings-memory');
-        
+
         if (!response.ok) {
           console.error('Failed to load Master Settings memory: HTTP', response.status);
           return;
         }
-        
+
         const data = await response.json();
-        
+
         if (data) {
           setSheetWidth(parseInt(data.sheetWidth) || 1210);
           setSheetHeight(parseInt(data.sheetHeight) || 2420);
@@ -1565,7 +1404,7 @@ export default function Home() {
         console.error('Failed to load Master Settings memory:', error);
       }
     };
-    
+
     loadMasterSettingsMemory();
   }, []);
 
@@ -1628,18 +1467,22 @@ export default function Home() {
       if (globalLaminateMemory.includes(newOption)) {
         // Set the dropdown selection to show the existing option
         if (panelType === 'top') {
+          setLaminateSelection(newOption);
           form.setValue('topPanelLaminateCode', newOption);
           setSaveStatus('ready');
           setTimeout(() => setSaveStatus(''), 2000);
         } else if (panelType === 'bottom') {
+          setBottomLaminateSelection(newOption);
           form.setValue('bottomPanelLaminateCode', newOption);
           setBottomSaveStatus('ready');
           setTimeout(() => setBottomSaveStatus(''), 2000);
         } else if (panelType === 'left') {
+          setLeftLaminateSelection(newOption);
           form.setValue('leftPanelLaminateCode', newOption);
           setLeftSaveStatus('ready');
           setTimeout(() => setLeftSaveStatus(''), 2000);
         } else if (panelType === 'right') {
+          setRightLaminateSelection(newOption);
           form.setValue('rightPanelLaminateCode', newOption);
           setRightSaveStatus('ready');
           setTimeout(() => setRightSaveStatus(''), 2000);
@@ -1655,21 +1498,25 @@ export default function Home() {
       } else {
         // Add new option to global memory
         saveLaminateCodeMutation.mutate(newOption);
-        
+
         // Set the dropdown selection to show the newly saved option
         if (panelType === 'top') {
+          setLaminateSelection(newOption);
           form.setValue('topPanelLaminateCode', newOption);
           setSaveStatus('saved');
           setTimeout(() => setSaveStatus(''), 2000);
         } else if (panelType === 'bottom') {
+          setBottomLaminateSelection(newOption);
           form.setValue('bottomPanelLaminateCode', newOption);
           setBottomSaveStatus('saved');
           setTimeout(() => setBottomSaveStatus(''), 2000);
         } else if (panelType === 'left') {
+          setLeftLaminateSelection(newOption);
           form.setValue('leftPanelLaminateCode', newOption);
           setLeftSaveStatus('saved');
           setTimeout(() => setLeftSaveStatus(''), 2000);
         } else if (panelType === 'right') {
+          setRightLaminateSelection(newOption);
           form.setValue('rightPanelLaminateCode', newOption);
           setRightSaveStatus('saved');
           setTimeout(() => setRightSaveStatus(''), 2000);
@@ -1699,14 +1546,16 @@ export default function Home() {
       // Check if option already exists in global memory
       if (globalLaminateMemory.includes(newOption)) {
         // Set the dropdown selection to show the existing option
+        setBackLaminateSelection(newOption);
         form.setValue('backPanelLaminateCode', newOption);
         setBackSaveStatus('ready');
         setTimeout(() => setBackSaveStatus(''), 2000);
       } else {
         // Add new option to global memory
         saveLaminateCodeMutation.mutate(newOption);
-        
+
         // Set the dropdown selection to show the newly saved option
+        setBackLaminateSelection(newOption);
         form.setValue('backPanelLaminateCode', newOption);
         setBackSaveStatus('saved');
         setTimeout(() => setBackSaveStatus(''), 2000);
@@ -1731,7 +1580,7 @@ export default function Home() {
       } else {
         // Add new brand to memory via API
         savePlywoodBrandMutation.mutate(newBrand);
-        
+
         // Set the selection to show the newly saved brand
         setBackPanelPlywoodSelection(newBrand);
         form.setValue('backPanelPlywoodBrand', newBrand);
@@ -1752,64 +1601,42 @@ export default function Home() {
   const mmToInches = (mm: number): number => parseFloat((mm / 25.4).toFixed(1));
   const inchesToMm = (inches: number): number => Math.round(inches * 25.4);
 
-  // Normalize text for grouping (lowercase, trim spaces)
-  const normalizeForGrouping = (text: string) => text.trim().toLowerCase().replace(/\s+/g, ' ');
+  // Normalize strings for grouping (removes whitespace and case inconsistencies)
+  // This ensures items with the same text group together despite spacing/case differences
+  // Case-insensitive: "Apple Ply" and "apple ply" are treated as the same
+  const normalizeForGrouping = (text: string): string => {
+    return text
+      .trim()                          // Remove leading/trailing spaces
+      .toLowerCase()                   // Normalize to lowercase for case-insensitive grouping
+      .replace(/\s+/g, ' ');          // Collapse multiple spaces to single space
+  };
 
-  // ABC Rule: A=Plywood, B=Front Laminate, C=Inner Laminate
-  // Panels go on same sheet only if all 3 match
-  const extractABC = (panel: { name: string; A?: string; laminateCode?: string }) => {
-    const isBack = panel.name.includes('- Back Panel');
-    const A = panel.A || (isBack ? 'Apple ply 6mm BWP' : 'Apple Ply 16mm BWP');
-    
-    const code = (panel.laminateCode || '').trim();
-    let B = 'off white';
-    let C = 'off white';
-    
-    if (code.includes(' + ')) {
-      const parts = code.split(' + ').map(s => s.trim());
-      B = parts[0] || 'off white';
-      C = parts[1] || 'off white';
-    } else if (code) {
-      B = code;
+  // Check if material confirmation is required before adding a panel
+  // Returns true if laminate is "none"/empty/unspecified
+  const requiresMaterialConfirmation = ({ plywood, laminateCode }: { plywood?: string; laminateCode?: string }): boolean => {
+    const normalizedLaminate = (laminateCode || '').trim().toLowerCase();
+
+    // Check if laminate code is empty or "none"
+    if (normalizedLaminate === '' || normalizedLaminate === 'none') {
+      return true;
     }
-    
-    if (B.toLowerCase() === 'backer') B = 'off white';
-    if (C.toLowerCase() === 'backer') C = 'off white';
-    
-    const groupKey = `${normalizeForGrouping(A)}|||${normalizeForGrouping(B)}|||${normalizeForGrouping(C)}`;
-    return { A, B, C, groupKey };
-  };
-  
-  // Group panels by ABC
-  const groupPanelsByABC = (panels: any[]) => {
-    return panels.reduce((acc, panel) => {
-      const abc = extractABC(panel);
-      if (!acc[abc.groupKey]) {
-        acc[abc.groupKey] = { A: abc.A, B: abc.B, C: abc.C, laminateCode: panel.laminateCode || `${abc.B} + ${abc.C}`, panels: [] };
-      }
-      acc[abc.groupKey].panels.push(panel);
-      return acc;
-    }, {} as Record<string, any>);
+
+    // Laminate code is specified with a real value
+    return false;
   };
 
-  // Check if laminate is empty or "none"
-  const requiresMaterialConfirmation = ({ laminateCode }: { plywood?: string; laminateCode?: string }) => {
-    const code = (laminateCode || '').trim().toLowerCase();
-    return code === '' || code === 'none';
-  };
-
-  // Calculate panel dimensions - Apply width reduction to top/bottom panels for optimizer
+  // Calculate panel dimensions
   const calculatePanelDimensions = (cabinet: Cabinet) => {
-    const calculatedWidth = cabinet.width - (cabinet.widthReduction ?? 36);
-    // Back panel reduction: use 0 for actual dimensions, otherwise apply the reduction value
-    const backWidthReduction = cabinet.backPanelWidthReduction ?? 20;
-    const backHeightReduction = cabinet.backPanelHeightReduction ?? 20;
+    const effectiveWidth = cabinet.width - (cabinet.widthReduction || 36);
+    const backWidth = cabinet.width; // Use FULL cabinet width - NO reductions at all
+    const backHeight = cabinet.height; // Use FULL cabinet height - NO reductions at all
+
     return {
-      top: { width: calculatedWidth, height: cabinet.depth, thickness: 18 },
-      bottom: { width: calculatedWidth, height: cabinet.depth, thickness: 18 },
+      top: { width: effectiveWidth, height: cabinet.depth, thickness: 18 },
+      bottom: { width: effectiveWidth, height: cabinet.depth, thickness: 18 },
       left: { width: cabinet.depth, height: cabinet.height, thickness: 18 },
       right: { width: cabinet.depth, height: cabinet.height, thickness: 18 },
-      back: { width: cabinet.width - backWidthReduction, height: cabinet.height - backHeightReduction, thickness: 18 }
+      back: { width: backWidth, height: backHeight, thickness: 18 }
     };
   };
 
@@ -1829,12 +1656,12 @@ export default function Home() {
     formattedMessages: string[];
   } => {
     const details: MissingLaminateDetail[] = [];
-    
+
     // For basic mode, check shutter laminate
     if (mode === 'basic') {
       const hasShutterCode = !!(cabinet.shutterLaminateCode && cabinet.shutterLaminateCode.trim());
       const isShutterUserSelected = userSelectedLaminates.has('shutterLaminateCode');
-      
+
       // Require BOTH a value AND user selection (not just auto-filled default)
       if (!hasShutterCode || !isShutterUserSelected) {
         details.push({
@@ -1843,14 +1670,14 @@ export default function Home() {
           missingInner: false
         });
       }
-      const formattedMessages = details.map(d => 
+      const formattedMessages = details.map(d =>
         d.missingFront && d.missingInner ? `${d.panel}: Missing both front and inner laminate` :
-        d.missingFront ? `${d.panel}: Missing front laminate` :
-        `${d.panel}: Missing inner laminate`
+          d.missingFront ? `${d.panel}: Missing front laminate` :
+            `${d.panel}: Missing inner laminate`
       );
       return { needsConfirmation: details.length > 0, details, formattedMessages };
     }
-    
+
     // For advanced mode, check all panels
     const panels = [
       { key: 'top', label: 'Top Panel', frontCode: cabinet.topPanelLaminateCode, innerCode: cabinet.topPanelInnerLaminateCode, frontField: 'topPanelLaminateCode', innerField: 'topPanelInnerLaminateCode' },
@@ -1859,17 +1686,17 @@ export default function Home() {
       { key: 'right', label: 'Right Panel', frontCode: cabinet.rightPanelLaminateCode, innerCode: cabinet.rightPanelInnerLaminateCode, frontField: 'rightPanelLaminateCode', innerField: 'rightPanelInnerLaminateCode' },
       { key: 'back', label: 'Back Panel', frontCode: cabinet.backPanelLaminateCode, innerCode: cabinet.backPanelInnerLaminateCode, frontField: 'backPanelLaminateCode', innerField: 'backPanelInnerLaminateCode' }
     ];
-    
+
     for (const panel of panels) {
       const hasFrontCode = !!(panel.frontCode && panel.frontCode.trim());
       const hasInnerCode = !!(panel.innerCode && panel.innerCode.trim());
       const isFrontUserSelected = userSelectedLaminates.has(panel.frontField);
       const isInnerUserSelected = userSelectedLaminates.has(panel.innerField);
-      
+
       // Require BOTH a value AND user selection (not just auto-filled defaults)
       const missingFront = !hasFrontCode || !isFrontUserSelected;
       const missingInner = !hasInnerCode || !isInnerUserSelected;
-      
+
       if (missingFront || missingInner) {
         details.push({
           panel: panel.label,
@@ -1878,19 +1705,19 @@ export default function Home() {
         });
       }
     }
-    
-    const formattedMessages = details.map(d => 
+
+    const formattedMessages = details.map(d =>
       d.missingFront && d.missingInner ? `${d.panel}: Missing both front and inner laminate` :
-      d.missingFront ? `${d.panel}: Missing front laminate` :
-      `${d.panel}: Missing inner laminate`
+        d.missingFront ? `${d.panel}: Missing front laminate` :
+          `${d.panel}: Missing inner laminate`
     );
-    
+
     return { needsConfirmation: details.length > 0, details, formattedMessages };
   };
 
   // ✅ VERSION WITH TRACKING PARAMETER: Same logic but accepts a tracking set (for cabinet add validation)
   const collectMissingLaminateDetailsWithTracking = (
-    cabinet: Cabinet, 
+    cabinet: Cabinet,
     mode: 'basic' | 'advanced',
     trackingSet: Set<string>
   ): {
@@ -1899,11 +1726,11 @@ export default function Home() {
     formattedMessages: string[];
   } => {
     const details: MissingLaminateDetail[] = [];
-    
+
     // For basic mode, check shutter laminate - just check if value exists (no tracking required)
     if (mode === 'basic') {
       const hasShutterCode = !!(cabinet.shutterLaminateCode && cabinet.shutterLaminateCode.trim());
-      
+
       // ✅ SIMPLIFIED: Basic mode just needs a value, no tracking requirement
       if (!hasShutterCode) {
         details.push({
@@ -1912,14 +1739,14 @@ export default function Home() {
           missingInner: false
         });
       }
-      const formattedMessages = details.map(d => 
+      const formattedMessages = details.map(d =>
         d.missingFront && d.missingInner ? `${d.panel}: Missing both front and inner laminate` :
-        d.missingFront ? `${d.panel}: Missing front laminate` :
-        `${d.panel}: Missing inner laminate`
+          d.missingFront ? `${d.panel}: Missing front laminate` :
+            `${d.panel}: Missing inner laminate`
       );
       return { needsConfirmation: details.length > 0, details, formattedMessages };
     }
-    
+
     // For advanced mode, check all panels
     const panels = [
       { key: 'top', label: 'Top Panel', frontCode: cabinet.topPanelLaminateCode, innerCode: cabinet.topPanelInnerLaminateCode, frontField: 'topPanelLaminateCode', innerField: 'topPanelInnerLaminateCode' },
@@ -1928,15 +1755,17 @@ export default function Home() {
       { key: 'right', label: 'Right Panel', frontCode: cabinet.rightPanelLaminateCode, innerCode: cabinet.rightPanelInnerLaminateCode, frontField: 'rightPanelLaminateCode', innerField: 'rightPanelInnerLaminateCode' },
       { key: 'back', label: 'Back Panel', frontCode: cabinet.backPanelLaminateCode, innerCode: cabinet.backPanelInnerLaminateCode, frontField: 'backPanelLaminateCode', innerField: 'backPanelInnerLaminateCode' }
     ];
-    
+
     for (const panel of panels) {
       const hasFrontCode = !!(panel.frontCode && panel.frontCode.trim());
       const hasInnerCode = !!(panel.innerCode && panel.innerCode.trim());
-      
-      // Only require values to exist (defaults are now acceptable)
-      const missingFront = !hasFrontCode;
-      const missingInner = !hasInnerCode;
-      
+      const isFrontUserSelected = trackingSet.has(panel.frontField);
+      const isInnerUserSelected = trackingSet.has(panel.innerField);
+
+      // Require BOTH a value AND user selection (not just auto-filled defaults)
+      const missingFront = !hasFrontCode || !isFrontUserSelected;
+      const missingInner = !hasInnerCode || !isInnerUserSelected;
+
       if (missingFront || missingInner) {
         details.push({
           panel: panel.label,
@@ -1945,39 +1774,38 @@ export default function Home() {
         });
       }
     }
-    
-    const formattedMessages = details.map(d => 
+
+    const formattedMessages = details.map(d =>
       d.missingFront && d.missingInner ? `${d.panel}: Missing both front and inner laminate` :
-      d.missingFront ? `${d.panel}: Missing front laminate` :
-      `${d.panel}: Missing inner laminate`
+        d.missingFront ? `${d.panel}: Missing front laminate` :
+          `${d.panel}: Missing inner laminate`
     );
-    
+
     return { needsConfirmation: details.length > 0, details, formattedMessages };
   };
 
   // Helper function to compose laminate code from separate front and inner codes
-  // ✅ CRITICAL: Default must match grouping logic's default ("off white") for consistent ABC matching
   const composeLaminateCode = (frontCode: string, innerCode: string): string => {
     const front = (frontCode || '').trim();
     const inner = (innerCode || '').trim();
-    
+
     // If both are provided, combine them
     if (front && inner) {
       return `${front} + ${inner}`;
     }
-    
-    // If only front is provided, default inner to "off white" (matches grouping default)
+
+    // If only front is provided, default inner to "Backer"
     if (front && !inner) {
-      return `${front} + off white`;
+      return `${front} + Backer`;
     }
-    
-    // If only inner is provided, default front to "off white"
+
+    // If only inner is provided, default front to "Backer"
     if (!front && inner) {
-      return `off white + ${inner}`;
+      return `Backer + ${inner}`;
     }
-    
-    // If neither is provided, use "off white + off white" for consistent grouping
-    return 'off white + off white';
+
+    // If neither is provided, return empty string
+    return '';
   };
 
   // ✅ REMOVED: normalizeLaminateCode function - no longer needed without laminate types
@@ -1989,13 +1817,13 @@ export default function Home() {
       // Extract quantity from the cabinet name (e.g., "2000×200mm (Qty: 5)") or use shutterCount
       const qtyMatch = cabinet.name.match(/\(Qty: (\d+)\)/);
       const quantity = qtyMatch ? parseInt(qtyMatch[1]) : (cabinet.shutterCount || 1);
-      
-      // ✅ Get plywood type from A (unified field for Basic mode)
-      const A = cabinet.A || 'Apple Ply 16mm BWP';
-      
+
+      // Get plywood type (default to Apple Ply 16mm BWP if not set)
+      const plywoodType = cabinet.plywoodType || 'Apple Ply 16mm BWP';
+
       // ✅ FIX: Compose BOTH front + inner laminate codes for correct consolidation and preview display
       const laminateCode = composeLaminateCode(cabinet.shutterLaminateCode || '', cabinet.shutterInnerLaminateCode || '');
-      
+
       // Create the specified quantity of identical panels
       const panels: Panel[] = [];
       for (let i = 0; i < quantity; i++) {
@@ -2004,25 +1832,24 @@ export default function Home() {
           width: cabinet.width,
           height: cabinet.height,
           laminateCode: laminateCode,
-          A: A,
+          plywoodType: plywoodType,
           grainDirection: cabinet.shutterGrainDirection === true,
           gaddi: cabinet.shutterGaddi === true,
           nomW: cabinet.width,
           nomH: cabinet.height
         });
       }
-      
+
       return panels;
     }
 
     // For regular cabinets, use the standard panel generation
     const dimensions = calculatePanelDimensions(cabinet);
-    
+
     // Get plywood types (default to Apple Ply 16mm BWP if not set)
-    const A = cabinet.A || 'Apple Ply 16mm BWP';
-    // Back panel has its own plywood selection (defaults to cabinet plywood if not set)
-    const backPanelPlywoodBrand = (cabinet as any).backPanelPlywoodBrand || A;
-    
+    const plywoodType = cabinet.plywoodType || 'Apple Ply 16mm BWP';
+    const backPanelPlywoodBrand = cabinet.backPanelPlywoodBrand || plywoodType;
+
     // Pre-compose laminate codes for dynamic grain direction checks
     const topLaminateCode = composeLaminateCode(
       cabinet.topPanelLaminateCode || '',
@@ -2040,64 +1867,64 @@ export default function Home() {
       cabinet.rightPanelLaminateCode || '',
       cabinet.rightPanelInnerLaminateCode || ''
     );
-    
+
     // ✅ FIX: Apply grain-based nomW/nomH swapping for LEFT/RIGHT panels (like shutters)
     // When grain is ON: nomW = depth (X-axis), nomH = height (Y-axis) - NO rotation
     // When grain is OFF: nomW = height, nomH = depth - allows rotation
     const hasLeftGrain = cabinet.leftPanelGrainDirection === true;
     const leftNomW = hasLeftGrain ? dimensions.left.width : dimensions.left.height;
     const leftNomH = hasLeftGrain ? dimensions.left.height : dimensions.left.width;
-    
+
     const hasRightGrain = cabinet.rightPanelGrainDirection === true;
     const rightNomW = hasRightGrain ? dimensions.right.width : dimensions.right.height;
     const rightNomH = hasRightGrain ? dimensions.right.height : dimensions.right.width;
-    
+
     const panels: Panel[] = [
-      { 
+      {
         id: `${cabinet.name}-TOP-grain-${cabinet.topPanelGrainDirection === true}`,
-        name: `${cabinet.name} - Top`, 
-        width: dimensions.top.width, 
-        height: dimensions.top.height, 
+        name: `${cabinet.name} - Top`,
+        width: dimensions.top.width,
+        height: dimensions.top.height,
         laminateCode: topLaminateCode,
         gaddi: cabinet.topPanelGaddi === true,
         grainDirection: cabinet.topPanelGrainDirection === true,
-        A: A,
+        plywoodType: plywoodType,
         nomW: dimensions.top.width,
         nomH: dimensions.top.height
       },
-      { 
+      {
         id: `${cabinet.name}-BOTTOM-grain-${cabinet.bottomPanelGrainDirection === true}`,
-        name: `${cabinet.name} - Bottom`, 
-        width: dimensions.bottom.width, 
-        height: dimensions.bottom.height, 
+        name: `${cabinet.name} - Bottom`,
+        width: dimensions.bottom.width,
+        height: dimensions.bottom.height,
         laminateCode: bottomLaminateCode,
         gaddi: cabinet.bottomPanelGaddi === true,
         grainDirection: cabinet.bottomPanelGrainDirection === true,
-        A: A,
+        plywoodType: plywoodType,
         nomW: dimensions.bottom.width,
         nomH: dimensions.bottom.height
       },
-      { 
+      {
         id: `${cabinet.name}-LEFT-grain-${cabinet.leftPanelGrainDirection === true}`,
-        name: `${cabinet.name} - Left`, 
-        width: dimensions.left.width, 
-        height: dimensions.left.height, 
+        name: `${cabinet.name} - Left`,
+        width: dimensions.left.width,
+        height: dimensions.left.height,
         laminateCode: leftLaminateCode,
         gaddi: cabinet.leftPanelGaddi === true,
         grainDirection: cabinet.leftPanelGrainDirection === true,
-        A: A,
+        plywoodType: plywoodType,
         nomW: leftNomW,
         nomH: leftNomH
       },
-      { 
+      {
         id: `${cabinet.name}-RIGHT-grain-${cabinet.rightPanelGrainDirection === true}`,
-        name: `${cabinet.name} - Right`, 
-        width: dimensions.right.width, 
-        height: dimensions.right.height, 
+        name: `${cabinet.name} - Right`,
+        width: dimensions.right.width,
+        height: dimensions.right.height,
         laminateCode: rightLaminateCode,
         gaddi: cabinet.rightPanelGaddi === true,
         grainDirection: cabinet.rightPanelGrainDirection === true,
-        A: A,
+        plywoodType: plywoodType,
         nomW: rightNomW,
         nomH: rightNomH
       }
@@ -2106,26 +1933,26 @@ export default function Home() {
     // Add shutters if enabled
     if (cabinet.shuttersEnabled && cabinet.shutters) {
       cabinet.shutters.forEach((shutter, index) => {
-        // ✅ SHUTTER CONSOLIDATION: Use main shutter laminate codes (not special logic)
-        // Shutters consolidate onto same sheet as any other panels with matching plywood + front + inner laminates
-        const shutterLaminateCodeFront = cabinet.shutterLaminateCode || '';
+        // Use shutter's individual laminate code if set, otherwise inherit from Cabinet Configuration
+        // ✅ CONSOLIDATION: Compose front + inner laminate codes for matching with Quick Shutter
+        const shutterLaminateCodeFront = shutter.laminateCode || cabinet.shutterLaminateCode || '';
         const shutterLaminateCodeInner = cabinet.shutterInnerLaminateCode || '';
         const composedShutterLaminateCode = composeLaminateCode(shutterLaminateCodeFront, shutterLaminateCodeInner);
-        
+
         // ✅ FIX: Swap nomW/nomH based on grain direction to prevent rotation when grains are ON
         // When grain is ON: width stays on Y-axis (nomW = width, nomH = height - NO rotation)
         // When grain is OFF: width can rotate to X-axis (nomW = height, nomH = width - allows rotation)
         const hasShutterGrain = cabinet.shutterGrainDirection === true;
         const nomW = hasShutterGrain ? shutter.width : shutter.height;
         const nomH = hasShutterGrain ? shutter.height : shutter.width;
-        
+
         panels.push({
           name: `${cabinet.name} - Shutter ${index + 1}`,
           width: shutter.width,
           height: shutter.height,
           laminateCode: composedShutterLaminateCode, // ✅ Use composed code for consolidation matching
           grainDirection: hasShutterGrain, // Read from cabinet object
-          A: A, // ALWAYS use cabinet plywood (same as regular panels)
+          plywoodType: plywoodType, // ALWAYS use cabinet plywood (same as regular panels)
           nomW: nomW,
           nomH: nomH
         });
@@ -2139,21 +1966,21 @@ export default function Home() {
           cabinet.centerPostLaminateCode || '',
           cabinet.centerPostInnerLaminateCode || ''
         );
-        
+
         // ✅ FIX: Swap nomW/nomH based on grain direction to allow rotation flexibility
         // When grain is ON: height stays on Y-axis (nomW = height, nomH = depth)
         // When grain is OFF: height can rotate to X-axis (nomW = depth, nomH = height)
         const hasCenterPostGrain = cabinet.centerPostGrainDirection === true;
         const nomW = hasCenterPostGrain ? cabinet.centerPostHeight : cabinet.centerPostDepth;
         const nomH = hasCenterPostGrain ? cabinet.centerPostDepth : cabinet.centerPostHeight;
-        
+
         panels.push({
           name: `${cabinet.name} - Center Post ${i + 1}`,
           width: cabinet.centerPostDepth, // Use the actual center post depth from form
           height: cabinet.centerPostHeight,
           laminateCode: centerPostLaminateCode,
           grainDirection: hasCenterPostGrain,
-          A: A,
+          plywoodType: plywoodType,
           nomW: nomW,
           nomH: nomH
         });
@@ -2162,30 +1989,31 @@ export default function Home() {
 
     // Add shelves if enabled
     if (cabinet.shelvesEnabled && cabinet.shelvesQuantity > 0) {
-      const shelfWidth = cabinet.centerPostEnabled 
-        ? cabinet.width - (cabinet.centerPostQuantity * 18)
-        : cabinet.width;
-      
+      const effectiveWidth = cabinet.width - (cabinet.widthReduction || 36);
+      const shelfWidth = cabinet.centerPostEnabled
+        ? effectiveWidth - (cabinet.centerPostQuantity * 18)
+        : effectiveWidth;
+
       for (let i = 0; i < cabinet.shelvesQuantity; i++) {
         const shelvesLaminateCode = composeLaminateCode(
           cabinet.shelvesLaminateCode || '',
           cabinet.shelvesInnerLaminateCode || ''
         );
-        
+
         // ✅ FIX: Swap nomW/nomH based on grain direction to allow rotation flexibility
         // When grain is ON: width stays on Y-axis (nomW = shelfWidth, nomH = depth)
         // When grain is OFF: width can rotate to X-axis (nomW = depth, nomH = shelfWidth)
         const hasShelfGrain = cabinet.shelvesGrainDirection === true;
         const nomW = hasShelfGrain ? shelfWidth : (cabinet.depth - 20);
         const nomH = hasShelfGrain ? (cabinet.depth - 20) : shelfWidth;
-        
+
         panels.push({
           name: `${cabinet.name} - Shelf ${i + 1}`,
           width: shelfWidth,
           height: cabinet.depth - 20, // Standard shelf depth reduction
           laminateCode: shelvesLaminateCode,
           grainDirection: hasShelfGrain,
-          A: A,
+          plywoodType: plywoodType,
           nomW: nomW,
           nomH: nomH
         });
@@ -2197,7 +2025,7 @@ export default function Home() {
       cabinet.backPanelLaminateCode || '',
       cabinet.backPanelInnerLaminateCode || ''
     );
-    
+
     panels.push({
       id: `${cabinet.name}-BACK-grain-${cabinet.backPanelGrainDirection === true}`,
       name: `${cabinet.name} - Back Panel`,
@@ -2205,7 +2033,7 @@ export default function Home() {
       height: dimensions.back.height,
       laminateCode: backLaminateCode,
       grainDirection: cabinet.backPanelGrainDirection === true,
-      A: backPanelPlywoodBrand, // Uses back panel plywood (follows ABC rule - groups when A+B+C matches)
+      plywoodType: backPanelPlywoodBrand,
       nomW: dimensions.back.width,
       nomH: dimensions.back.height
     });
@@ -2218,7 +2046,7 @@ export default function Home() {
   const previewBrandResults = useMemo(() => {
     // ✅ OPTIMIZATION: Don't block on wood grains loading - show preview immediately
     // Preferences will update cutting list in background as they load
-    
+
     // Only calculate if preview dialog is open
     if (!showPreviewDialog || cabinets.length === 0) {
       return [];
@@ -2226,100 +2054,136 @@ export default function Home() {
 
     const allPanels = cabinets.flatMap(generatePanels);
     console.log('🔍 Preview Dialog - allPanels count:', allPanels.length);
-    
+
     const currentSheetWidth = sheetWidth;
     const currentSheetHeight = sheetHeight;
     const currentKerf = kerf;
-    
+
     const getLaminateDisplay = (laminateCode: string): string => {
       if (!laminateCode) return 'None';
       return laminateCode;
     };
-    
-    // ✅ STRONG ABC RULE - Use single source of truth function
-    const panelsByABC = groupPanelsByABC(allPanels);
-    
-    // Convert to expected format
-    const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]: [string, any]) => {
-      acc[groupKey] = {
-        brand: group.A,
-        laminateCode: group.laminateCode,
-        panels: group.panels
-      };
+
+    // Group panels using 3-way matching
+    const panelsByBrand = allPanels.reduce((acc, panel) => {
+      const isBackPanel = panel.name.includes('- Back Panel');
+      const brand = isBackPanel
+        ? (panel.backPanelPlywoodBrand || panel.plywoodType || 'Apple ply 6mm BWP')
+        : (panel.plywoodType || 'Apple Ply 16mm BWP');
+      const laminateCode = panel.laminateCode || '';
+      const fullLaminateCode = laminateCode.trim();
+      const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(fullLaminateCode)}`;
+      if (!acc[groupKey]) acc[groupKey] = { brand, laminateCode, panels: [] };
+      acc[groupKey].panels.push(panel);
       return acc;
     }, {} as Record<string, { brand: string; laminateCode: string; panels: typeof allPanels }>);
-    
+
     const brandResults: Array<{ brand: string; laminateCode: string; laminateDisplay: string; result: any; isBackPanel: boolean }> = [];
-    
+
     Object.entries(panelsByBrand).forEach(([groupKey, group]) => {
       console.group('🔍 PREVIEW DIALOG - Preparing parts');
       console.log('Group panels:', group.panels.length);
-      const hasShutters = group.panels.some(p => p.name.includes('- Shutter'));
-      if (hasShutters) {
-        console.log('✅ SHUTTER CONSOLIDATION - This group contains shutters with matching plywood+laminates');
-      }
       console.groupEnd();
-      
+
       const rawParts = preparePartsForOptimizer(group.panels);
       const parts = rawParts
         .filter((p: any) => Boolean(p))
         .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
-      
+
       console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
-      
+
       // Use multi-pass optimization for maximum efficiency
       const optimizedPanels = multiPassOptimize(parts, currentSheetWidth, currentSheetHeight);
       const result = { panels: optimizedPanels };
       const laminateDisplay = getLaminateDisplay(group.laminateCode);
-      
+
       // Assign stable sheet IDs
       if (result?.panels) {
         result.panels.forEach((sheet: any, sheetIdx: number) => {
           sheet._sheetId = `${groupKey}-${sheetIdx}`;
           // Restore grain and compute display dims for every placed panel
-          sheet.placed?.forEach((p: any) => { 
+          sheet.placed?.forEach((p: any) => {
             const found = group.panels.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
             if (found) {
               p.grainDirection = found.grainDirection ?? null;
               p.type = (found as any).name || p.name;
-              // Use actual panel values - NO hardcoded defaults
-              p.depth = (found as any).depth ?? (found as any).width;
+              p.depth = (found as any).width ?? p.width ?? 450;
             }
             computeDisplayDims(p);
           });
         });
       }
-      
-      
+
+      // ✅ GADDI Rule Checker - Display GADDI panel info before preview
+      if (result?.panels) {
+        const gaddiPanels: any[] = [];
+        result.panels.forEach((sheet: any, sheetIdx: number) => {
+          sheet.placed?.forEach((panel: any) => {
+            if (panel.gaddi === true) {
+              const panelType = panel.id.toUpperCase().includes('TOP') ? 'TOP' :
+                panel.id.toUpperCase().includes('BOTTOM') ? 'BOTTOM' :
+                  panel.id.toUpperCase().includes('LEFT') ? 'LEFT' :
+                    panel.id.toUpperCase().includes('RIGHT') ? 'RIGHT' :
+                      panel.id.toUpperCase().includes('BACK') ? 'BACK' : 'SHELF';
+
+              const nomW = panel.nomW ?? panel.w;
+              const nomH = panel.nomH ?? panel.h;
+              const isRotated = Math.abs(panel.w - nomH) < 0.5 && Math.abs(panel.h - nomW) < 0.5;
+
+              let markedEdge: string;
+              let edgeValue: number;
+              let lineDirection: string;
+
+              if (panelType === 'TOP' || panelType === 'BOTTOM') {
+                markedEdge = 'WIDTH';
+                edgeValue = nomW;
+                lineDirection = 'marks WIDTH dimension ← ALWAYS';
+              } else if (panelType === 'LEFT' || panelType === 'RIGHT') {
+                markedEdge = 'HEIGHT';
+                edgeValue = nomH;
+                lineDirection = 'marks HEIGHT dimension ← ALWAYS';
+              } else {
+                markedEdge = 'N/A';
+                edgeValue = 0;
+                lineDirection = 'marks HEIGHT dimension';
+              }
+
+              gaddiPanels.push({
+                id: panel.id,
+                type: panelType,
+                markedEdge: `${markedEdge}=${edgeValue}mm`,
+                gaddiLine: lineDirection,
+                rotated: isRotated,
+                nomW,
+                nomH,
+                w: panel.w,
+                h: panel.h
+              });
+            }
+          });
+        });
+
+        if (gaddiPanels.length > 0) {
+          console.log('📏 GADDI Panels in Preview:', gaddiPanels);
+        }
+      }
+
       const hasBackPanel = group.panels.some(p => p.name.includes('- Back Panel'));
-      brandResults.push({ 
-        brand: group.brand, 
-        laminateCode: group.laminateCode, 
+      brandResults.push({
+        brand: group.brand,
+        laminateCode: group.laminateCode,
         laminateDisplay,
-        result, 
+        result,
         isBackPanel: hasBackPanel
       });
     });
-    
-    // ✅ SHUTTER CONSOLIDATION: Verify shutters are using same sheet when materials match
-    console.group('✅ SHUTTER CONSOLIDATION CHECK');
-    const shutterCount = allPanels.filter(p => p.name.includes('- Shutter')).length;
-    console.log('Total shutters found:', shutterCount);
-    const shutterGrouping = allPanels.filter(p => p.name.includes('- Shutter')).map(s => ({
-      name: s.name,
-      plywood: s.A,
-      laminate: s.laminateCode
-    }));
-    console.log('Shutter grouping:', shutterGrouping);
-    console.log('✅ Shutters will consolidate onto cabinet sheets when plywood + laminates match');
-    console.groupEnd();
-    
+
     // Process manual panels
     const placedManualPanelIds = new Set<string>();
     manualPanels.forEach(mp => {
       if (!mp.targetSheet || !mp.targetSheet.sheetId) return;
       const targetSheetId = mp.targetSheet.sheetId;
-      
+
       let targetBrandResult: any = null;
       let targetSheetIndex = -1;
       for (const brandResult of brandResults) {
@@ -2333,37 +2197,37 @@ export default function Home() {
         }
       }
       if (!targetBrandResult || targetSheetIndex === -1) return;
-      
+
       const targetSheet = targetBrandResult.result.panels[targetSheetIndex];
       const existingPanels = targetSheet.placed.map((p: any) => ({
         id: p.id, w: p.w, h: p.h, nomW: p.nomW ?? p.w, nomH: p.nomH ?? p.h,
         qty: 1, rotate: p.grainDirection ? false : true, gaddi: p.gaddi === true,
         grainDirection: p.grainDirection === true, laminateCode: p.laminateCode || ''
       }));
-      
+
       const manualParts = Array(mp.quantity).fill(null).map(() => ({
         id: `${mp.name} (Manual)`, w: mp.width, h: mp.height, nomW: mp.width, nomH: mp.height,
         qty: 1, rotate: mp.grainDirection ? false : true, gaddi: mp.gaddi === true,
         grainDirection: mp.grainDirection === true, laminateCode: mp.laminateCode || ''
       }));
-      
+
       const combinedParts = [...existingPanels, ...manualParts];
-      const combinedResult = optimizeCutlist({ parts: combinedParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: getOptimizationTimeMs(combinedParts.length) });
-      
+      const combinedResult = optimizeCutlist({ parts: combinedParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
+
       if (combinedResult?.panels && combinedResult.panels.length === 1) {
         combinedResult.panels[0]._sheetId = targetSheetId;
         targetBrandResult.result.panels[targetSheetIndex] = combinedResult.panels[0];
         placedManualPanelIds.add(mp.id);
       }
     });
-    
+
     return brandResults;
   }, [showPreviewDialog, cabinets, woodGrainsPreferences, sheetWidth, sheetHeight, kerf, manualPanels, deletedPreviewSheets]);
 
   // Calculate cutting list summary with memoization
   const cuttingListSummary = useMemo((): CuttingListSummary => {
     // ✅ OPTIMIZATION: Show summary immediately without blocking on preferences
-    
+
     const allPanels = cabinets.flatMap(generatePanels);
     console.log('🔍 All Panels with Grain Direction:', allPanels.map(p => ({
       name: p.name,
@@ -2372,7 +2236,7 @@ export default function Home() {
       grainDirection: p.grainDirection,
       laminateCode: p.laminateCode
     })));
-    
+
     // Group panels by laminate code
     const panelGroups: PanelGroup[] = [];
     const groupedByLaminate = allPanels.reduce((acc, panel) => {
@@ -2405,16 +2269,26 @@ export default function Home() {
 
     const allPanels = cabinets.flatMap(generatePanels);
 
-    // ✅ STRONG ABC RULE - Use single source of truth function
-    const panelsByABC = groupPanelsByABC(allPanels);
-    
-    // Convert to expected format
-    const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]: [string, any]) => {
-      acc[groupKey] = {
-        brand: group.A,
-        laminateCode: group.laminateCode,
-        panels: group.panels
-      };
+    // Group panels based on 3-way matching:
+    // ALL panels must match: Plywood Brand + Front Laminate + Inner Laminate
+    const panelsByBrand = allPanels.reduce((acc, panel) => {
+      const isBackPanel = panel.name.includes('- Back Panel');
+      // For back panels: use backPanelPlywoodBrand, fall back to plywoodType, then default
+      const brand = isBackPanel
+        ? (panel.backPanelPlywoodBrand || panel.plywoodType || 'Apple ply 6mm BWP')
+        : (panel.plywoodType || 'Apple Ply 16mm BWP');
+      const laminateCode = panel.laminateCode || '';
+
+      // Use FULL laminate code (includes both front + inner laminate)
+      // e.g., "456SF Terra Wood + off white"
+      const fullLaminateCode = laminateCode.trim();
+
+      // Create grouping key: Plywood Brand + Full Laminate Code (front + inner)
+      // This ensures panels only group when all 3 materials match
+      const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(fullLaminateCode)}`;
+
+      if (!acc[groupKey]) acc[groupKey] = { brand, laminateCode, panels: [] };
+      acc[groupKey].panels.push(panel);
       return acc;
     }, {} as Record<string, { brand: string; laminateCode: string; panels: typeof allPanels }>);
 
@@ -2427,14 +2301,14 @@ export default function Home() {
       console.group('🔍 MATERIAL SUMMARY - Preparing parts');
       console.log('Group panels:', group.panels.length);
       console.groupEnd();
-      
+
       const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
-      
+
       // Remove falsy entries and ensure id is a string (prevents optimizer crashes)
       const parts = rawParts
         .filter((p: any) => Boolean(p))                       // remove undefined/null
         .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
-      
+
       console.group('🌾 MATERIAL SUMMARY - Optimizer Received');
       console.log('Parts count:', parts.length);
       parts.forEach(p => {
@@ -2443,28 +2317,28 @@ export default function Home() {
         }
       });
       console.groupEnd();
-      
+
       // Use multi-pass optimization for maximum efficiency
       const actualSheets = multiPassOptimize(parts, sheetWidth, sheetHeight);
-      
+
       // Assign stable sheet IDs for deletion tracking
       actualSheets.forEach((sheetData: any, sheetIdx: number) => {
         const sheetId = `${groupKey}-${sheetIdx}`;
         sheetData._sheetId = sheetId;
-        sheetData.placed?.forEach((p: any) => { 
-          p.grainDirection = group.panels.find(gp => gp.name === p.name)?.grainDirection ?? false; 
+        sheetData.placed?.forEach((p: any) => {
+          p.grainDirection = group.panels.find(gp => gp.name === p.name)?.grainDirection ?? false;
           if (p.id && p.id.includes('LEFT')) {
             console.log(`✅ OPTIMIZER OUTPUT - LEFT PANEL: placed at x=${p.x}, y=${p.y}, w=${p.w}, h=${p.h}, rotated=${p.rotated}, rotateAllowed=${p.rotateAllowed}`);
           }
         });
       });
-      
+
       // Count only non-deleted sheets
       const visibleSheetsCount = actualSheets.filter((sheetData: any) => {
         const sheetId = sheetData._sheetId;
         return sheetData.placed && sheetData.placed.length > 0 && !deletedPreviewSheets.has(sheetId);
       }).length;
-      
+
       brandGroups.push({
         brand: group.brand,
         laminateCode: group.laminateCode,
@@ -2495,11 +2369,11 @@ export default function Home() {
           .split('+')
           .map(part => part.trim())
           .filter(part => part && !part.match(/^Backer$/i));
-        
+
         console.log(`📊 Laminate Count - Brand: ${group.brand}, Full Code: "${group.laminateCode}"`);
         console.log(`   Plywood sheets (optimized): ${group.sheetsCount}, Panels in sheets: ${group.panelsCount}`);
         console.log(`   Split laminate code into parts:`, laminateParts);
-        
+
         // ✅ CORRECT: Laminate sheets are SAME SIZE as plywood sheets
         // Each plywood sheet needs 1 laminate sheet per face (front + inner)
         laminateParts.forEach(laminateCode => {
@@ -2521,37 +2395,37 @@ export default function Home() {
     if (calculationLogicLocked) {
       // Original locked logic - protected from modification
       if (!cabinet.shuttersEnabled) return [];
-      
+
       const effectiveWidth = cabinet.width; // Use full cabinet width - no reduction
       const shutterWidth = Math.round(effectiveWidth / cabinet.shutterCount) - (cabinet.shutterWidthReduction || 0);
       const shutterHeight = cabinet.height - (cabinet.shutterHeightReduction || 0);
-      
+
       // ✅ FIX: Shutters now use same laminate codes as cabinet panels to consolidate on same sheets
       const shutterLaminateCode = composeLaminateCode(
         cabinet.topPanelLaminateCode || '',
         cabinet.topPanelInnerLaminateCode || ''
       );
-      
+
       return Array(cabinet.shutterCount).fill(null).map(() => ({
         width: shutterWidth,
         height: shutterHeight,
         laminateCode: shutterLaminateCode
       }));
     }
-    
+
     // Unlocked mode - modifications allowed
     if (!cabinet.shuttersEnabled) return [];
-    
+
     const effectiveWidth = cabinet.width; // Use full cabinet width - no reduction
     const shutterWidth = Math.round(effectiveWidth / cabinet.shutterCount) - (cabinet.shutterWidthReduction || 0);
     const shutterHeight = cabinet.height - (cabinet.shutterHeightReduction || 0);
-    
+
     // ✅ FIX: Shutters now use same laminate codes as cabinet panels to consolidate on same sheets
     const shutterLaminateCode = composeLaminateCode(
       cabinet.topPanelLaminateCode || '',
       cabinet.topPanelInnerLaminateCode || ''
     );
-    
+
     return Array(cabinet.shutterCount).fill(null).map(() => ({
       width: shutterWidth,
       height: shutterHeight,
@@ -2595,7 +2469,7 @@ export default function Home() {
     }
   }, [watchedValues.shutters.length]);
 
-  // Mark memory-loaded and default laminate codes as user-selected on initial mount
+  // Mark memory-loaded laminate codes as user-selected on initial mount
   useEffect(() => {
     const memory = loadCabinetFormMemory();
     if (memory.topPanelLaminateCode) {
@@ -2607,24 +2481,17 @@ export default function Home() {
       markLaminateAsUserSelected('bottomPanelInnerLaminateCode');
       markLaminateAsUserSelected('leftPanelInnerLaminateCode');
       markLaminateAsUserSelected('rightPanelInnerLaminateCode');
+      // Sync display states
+      setLaminateSelection(memory.topPanelLaminateCode);
+      setBottomLaminateSelection(memory.topPanelLaminateCode);
+      setLeftLaminateSelection(memory.topPanelLaminateCode);
+      setRightLaminateSelection(memory.topPanelLaminateCode);
     }
     if (memory.backPanelLaminateCode) {
       markLaminateAsUserSelected('backPanelLaminateCode');
       markLaminateAsUserSelected('backPanelInnerLaminateCode');
+      setBackLaminateSelection(memory.backPanelLaminateCode);
     }
-    // Mark default laminate codes as user-selected (off white for all panels)
-    markLaminateAsUserSelected('topPanelLaminateCode');
-    markLaminateAsUserSelected('bottomPanelLaminateCode');
-    markLaminateAsUserSelected('leftPanelLaminateCode');
-    markLaminateAsUserSelected('rightPanelLaminateCode');
-    markLaminateAsUserSelected('backPanelLaminateCode');
-    markLaminateAsUserSelected('topPanelInnerLaminateCode');
-    markLaminateAsUserSelected('bottomPanelInnerLaminateCode');
-    markLaminateAsUserSelected('leftPanelInnerLaminateCode');
-    markLaminateAsUserSelected('rightPanelInnerLaminateCode');
-    markLaminateAsUserSelected('backPanelInnerLaminateCode');
-    
-    // No longer need to refresh display states - using form values directly now
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only once on mount
 
@@ -2638,7 +2505,7 @@ export default function Home() {
       right: cabinet.rightPanelLaminateCode,
       back: cabinet.backPanelLaminateCode
     });
-    
+
     // Include gaddi toggle states and grain directions in the cabinet
     // ✅ PRESERVE configurationMode from normalized cabinet
     const cabinetWithGaddi = {
@@ -2650,54 +2517,39 @@ export default function Home() {
       rightPanelGaddi: rightGaddiEnabled,
       ...computeGrainDirections(cabinet, woodGrainsPreferences) // ✅ DIRECT LINK: Use database preferences only
     };
-    
+
     // Store the cabinet for preview
     setLastAddedCabinet(cabinetWithGaddi);
-    
+
     updateCabinets((prev: Cabinet[]) => [...prev, cabinetWithGaddi]);
-    
-    // Save cabinet values to memory for next time - ✅ IMPROVED: Save all laminate codes
+
+    // Save cabinet values to memory for next time
     saveCabinetFormMemory({
       roomName: cabinet.roomName,
       customRoomName: cabinet.roomName === 'Manual Type' ? cabinet.roomName : undefined,
       height: cabinet.height,
       width: cabinet.width,
       depth: cabinet.depth,
-      A: cabinet.A,
-      widthReduction: cabinet.widthReduction,
-      // ✅ IMPROVED: Store ALL front laminate codes
+      plywoodType: cabinet.plywoodType,
+      backPanelPlywoodBrand: cabinet.backPanelPlywoodBrand,
       topPanelLaminateCode: cabinet.topPanelLaminateCode,
-      bottomPanelLaminateCode: cabinet.bottomPanelLaminateCode,
-      leftPanelLaminateCode: cabinet.leftPanelLaminateCode,
-      rightPanelLaminateCode: cabinet.rightPanelLaminateCode,
       backPanelLaminateCode: cabinet.backPanelLaminateCode,
-      shutterLaminateCode: cabinet.shutterLaminateCode,
-      centerPostLaminateCode: cabinet.centerPostLaminateCode,
-      shelvesLaminateCode: cabinet.shelvesLaminateCode,
-      // ✅ IMPROVED: Store ALL inner laminate codes
-      topPanelInnerLaminateCode: cabinet.topPanelInnerLaminateCode,
-      bottomPanelInnerLaminateCode: cabinet.bottomPanelInnerLaminateCode,
-      leftPanelInnerLaminateCode: cabinet.leftPanelInnerLaminateCode,
-      rightPanelInnerLaminateCode: cabinet.rightPanelInnerLaminateCode,
-      backPanelInnerLaminateCode: cabinet.backPanelInnerLaminateCode,
-      shutterInnerLaminateCode: cabinet.shutterInnerLaminateCode,
-      centerPostInnerLaminateCode: cabinet.centerPostInnerLaminateCode,
-      shelvesInnerLaminateCode: cabinet.shelvesInnerLaminateCode
+      widthReduction: cabinet.widthReduction
     });
-    
+
     // Clear user-laminate tracking for next cabinet
     clearUserLaminateTracking();
-    
+
     // Reset form with saved memory values
     const memory = loadCabinetFormMemory();
     const shutterMemoryNew = loadShutterFormMemory(); // ✅ LOAD shutter memory for form reset
-    
+
     // ✅ DIRECT LINK: Compute grain directions from memory laminate codes using database preferences
     const topCode = (memory.topPanelLaminateCode || '').split('+')[0].trim();
     const backCode = (memory.backPanelLaminateCode || '').split('+')[0].trim();
     const hasTopWoodGrain = !!(topCode && woodGrainsPreferences[topCode] === true);
     const hasBackWoodGrain = !!(backCode && woodGrainsPreferences[backCode] === true);
-    
+
     form.reset({
       id: crypto.randomUUID(),
       name: `Shutter #${cabinets.length + 2}`,
@@ -2726,20 +2578,20 @@ export default function Home() {
       shutterInnerLaminateCode: shutterMemoryNew.shutterInnerLaminateCode ?? '', // ✅ RESTORE from memory
       shutterGaddi: false, // ✅ FIX: Initialize Basic mode fields
       configurationMode: 'advanced', // ✅ FIX: Reset to Advanced mode after adding
-      // ✅ IMPROVED: Restore ALL laminate codes from memory
-      topPanelLaminateCode: memory.topPanelLaminateCode ?? 'off white',
-      bottomPanelLaminateCode: memory.bottomPanelLaminateCode ?? 'off white',
-      leftPanelLaminateCode: memory.leftPanelLaminateCode ?? 'off white',
-      rightPanelLaminateCode: memory.rightPanelLaminateCode ?? 'off white',
-      backPanelLaminateCode: memory.backPanelLaminateCode ?? 'off white',
-      topPanelInnerLaminateCode: memory.topPanelInnerLaminateCode ?? 'off white',
-      bottomPanelInnerLaminateCode: memory.bottomPanelInnerLaminateCode ?? 'off white',
-      leftPanelInnerLaminateCode: memory.leftPanelInnerLaminateCode ?? 'off white',
-      rightPanelInnerLaminateCode: memory.rightPanelInnerLaminateCode ?? 'off white',
-      backPanelInnerLaminateCode: memory.backPanelInnerLaminateCode ?? 'off white',
+      topPanelLaminateCode: memory.topPanelLaminateCode ?? '',
+      bottomPanelLaminateCode: memory.topPanelLaminateCode ?? '',
+      leftPanelLaminateCode: memory.topPanelLaminateCode ?? '',
+      rightPanelLaminateCode: memory.topPanelLaminateCode ?? '',
+      backPanelLaminateCode: memory.backPanelLaminateCode ?? '',
+      topPanelInnerLaminateCode: 'off white',
+      bottomPanelInnerLaminateCode: 'off white',
+      leftPanelInnerLaminateCode: 'off white',
+      rightPanelInnerLaminateCode: 'off white',
+      backPanelInnerLaminateCode: 'off white',
       innerLaminateCode: 'off white',
-      A: memory.A || 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: memory.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
+      plywoodType: memory.plywoodType ?? 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: memory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
+      shutterPlywoodBrand: shutterMemoryNew.shutterPlywoodBrand ?? (memory.plywoodType ?? 'Apple Ply 16mm BWP'), // ✅ Use shutter memory
       // ✅ DIRECT LINK: Initialize grain directions from database preferences, not hardcoded false
       topPanelGrainDirection: hasTopWoodGrain,
       bottomPanelGrainDirection: hasTopWoodGrain,
@@ -2748,7 +2600,7 @@ export default function Home() {
       backPanelGrainDirection: hasBackWoodGrain,
       shutterGrainDirection: false // Shutters don't use memory, so default to false
     });
-    
+
     // Restore laminate codes from memory - populate form values AND mark as user-selected
     if (memory.topPanelLaminateCode) {
       updateLaminateWithTracking('topPanelLaminateCode', memory.topPanelLaminateCode, 'user');
@@ -2760,27 +2612,34 @@ export default function Home() {
       updateLaminateWithTracking('bottomPanelInnerLaminateCode', 'off white', 'user');
       updateLaminateWithTracking('leftPanelInnerLaminateCode', 'off white', 'user');
       updateLaminateWithTracking('rightPanelInnerLaminateCode', 'off white', 'user');
+      // Sync local display states
+      setLaminateSelection(memory.topPanelLaminateCode);
+      setBottomLaminateSelection(memory.topPanelLaminateCode);
+      setLeftLaminateSelection(memory.topPanelLaminateCode);
+      setRightLaminateSelection(memory.topPanelLaminateCode);
     }
     if (memory.backPanelLaminateCode) {
       updateLaminateWithTracking('backPanelLaminateCode', memory.backPanelLaminateCode, 'user');
       updateLaminateWithTracking('backPanelInnerLaminateCode', 'off white', 'user');
+      // Sync local display state
+      setBackLaminateSelection(memory.backPanelLaminateCode);
     }
-    
+
     // Reset gaddi toggles - always ON by default
     setTopGaddiEnabled(true);
     setBottomGaddiEnabled(true);
     setLeftGaddiEnabled(true);
     setRightGaddiEnabled(true);
-    
+
     // ✅ FIX: Close preview dialog after adding cabinet so next preview shows fresh data
     // This prevents old panels from accumulating when preview is reopened
     setShowPreviewDialog(false);
-    
+
     toast({
       title: "Cabinet Added",
       description: `${cabinet.name} has been added to the cutting list.`
     });
-    
+
     // ✅ AUTO-FOCUS: Focus on Height field after cabinet is added (time saver)
     setTimeout(() => {
       if (cabinetHeightInputRef.current) {
@@ -2788,7 +2647,7 @@ export default function Home() {
         cabinetHeightInputRef.current.select();
       }
     }, 100);
-    
+
     // ✅ AUTO-FOCUS: Also focus on shutter height field if shutters are enabled
     if (cabinet.shuttersEnabled && cabinet.shutters && cabinet.shutters.length > 0) {
       setTimeout(() => {
@@ -2844,11 +2703,11 @@ export default function Home() {
     const rightCode = (cabinet.rightPanelLaminateCode || '').split('+')[0].trim();
     const backCode = (cabinet.backPanelLaminateCode || '').split('+')[0].trim();
     const shutterCode = (cabinet.shutterLaminateCode || '').split('+')[0].trim();
-    
+
     // ✅ CRITICAL: Use INNER laminate codes for shelves/center posts (BB materials)
     const shelvesCode = (cabinet.shelvesInnerLaminateCode || cabinet.innerLaminateCode || '').split('+')[0].trim();
     const centerPostCode = (cabinet.centerPostInnerLaminateCode || cabinet.innerLaminateCode || '').split('+')[0].trim();
-    
+
     // ✅ DIRECT LINK: Use ONLY database preferences - automatic wood grains based on laminate code
     return {
       topPanelGrainDirection: preferences[topCode] === true,
@@ -2891,23 +2750,11 @@ export default function Home() {
     // This ensures Basic mode validation works even if form submission doesn't include configurationMode
     const mode = cabinetConfigMode;
     cabinet = { ...cabinet, configurationMode: mode };
-    
-    // ✅ APPLY DEFAULTS: Ensure all laminate codes have values before validation
-    if (!cabinet.topPanelLaminateCode?.trim()) cabinet.topPanelLaminateCode = 'off white';
-    if (!cabinet.bottomPanelLaminateCode?.trim()) cabinet.bottomPanelLaminateCode = 'off white';
-    if (!cabinet.leftPanelLaminateCode?.trim()) cabinet.leftPanelLaminateCode = 'off white';
-    if (!cabinet.rightPanelLaminateCode?.trim()) cabinet.rightPanelLaminateCode = 'off white';
-    if (!cabinet.backPanelLaminateCode?.trim()) cabinet.backPanelLaminateCode = 'off white';
-    if (!cabinet.topPanelInnerLaminateCode?.trim()) cabinet.topPanelInnerLaminateCode = 'off white';
-    if (!cabinet.bottomPanelInnerLaminateCode?.trim()) cabinet.bottomPanelInnerLaminateCode = 'off white';
-    if (!cabinet.leftPanelInnerLaminateCode?.trim()) cabinet.leftPanelInnerLaminateCode = 'off white';
-    if (!cabinet.rightPanelInnerLaminateCode?.trim()) cabinet.rightPanelInnerLaminateCode = 'off white';
-    if (!cabinet.backPanelInnerLaminateCode?.trim()) cabinet.backPanelInnerLaminateCode = 'off white';
-    
+
     // ✅ AUTO-MARK LAMINATE FIELDS: Build updated tracking set BEFORE validation
     // This prevents false warnings for auto-populated fields from Master Settings
     const updatedTracking = new Set(userSelectedLaminates);
-    
+
     if (mode === 'basic') {
       // Basic mode: Check shutter laminate
       if (cabinet.shutterLaminateCode && cabinet.shutterLaminateCode.trim()) {
@@ -2922,7 +2769,7 @@ export default function Home() {
         { frontCode: cabinet.rightPanelLaminateCode, innerCode: cabinet.rightPanelInnerLaminateCode, frontField: 'rightPanelLaminateCode', innerField: 'rightPanelInnerLaminateCode' },
         { frontCode: cabinet.backPanelLaminateCode, innerCode: cabinet.backPanelInnerLaminateCode, frontField: 'backPanelLaminateCode', innerField: 'backPanelInnerLaminateCode' }
       ];
-      
+
       for (const panel of panelFields) {
         if (panel.frontCode && panel.frontCode.trim()) {
           updatedTracking.add(panel.frontField);
@@ -2932,7 +2779,7 @@ export default function Home() {
         }
       }
     }
-    
+
     // CRITICAL: Validate using updated tracking set to avoid false warnings
     // (collectMissingLaminateDetails checks both value AND userSelectedLaminates)
     const laminateCheck = collectMissingLaminateDetailsWithTracking(cabinet, mode, updatedTracking);
@@ -2959,29 +2806,26 @@ export default function Home() {
       setShowMaterialConfirmDialog(true);
       return; // Abort - don't add cabinet
     }
-    
+
     console.log('✅ Validation PASSED - Adding cabinet');
-    
+
     // ✅ PERSIST UPDATED TRACKING: Auto-marked fields are now confirmed
     setUserSelectedLaminates(updatedTracking);
-    
+
     // Save shutter memory for Quick Shutter mode auto-fill
-    if (mode === 'basic' && (cabinet.A || cabinet.shutterLaminateCode || cabinet.shutterInnerLaminateCode)) {
+    if (mode === 'basic' && (cabinet.shutterPlywoodBrand || cabinet.shutterLaminateCode || cabinet.shutterInnerLaminateCode)) {
       saveShutterFormMemory({
-        A: cabinet.A,
+        shutterPlywoodBrand: cabinet.shutterPlywoodBrand,
         shutterLaminateCode: cabinet.shutterLaminateCode,
         shutterInnerLaminateCode: cabinet.shutterInnerLaminateCode
       });
     }
-    
-    // Save cabinet memory for Advanced mode auto-fill (ALL panel laminate codes)
-    if (mode === 'advanced' && (cabinet.A || cabinet.topPanelLaminateCode)) {
+
+    // Save cabinet memory for Advanced mode auto-fill
+    if (mode === 'advanced' && (cabinet.plywoodType || cabinet.topPanelLaminateCode)) {
       saveCabinetFormMemory({
-        A: cabinet.A,
+        plywoodType: cabinet.plywoodType,
         topPanelLaminateCode: cabinet.topPanelLaminateCode,
-        bottomPanelLaminateCode: cabinet.bottomPanelLaminateCode,
-        leftPanelLaminateCode: cabinet.leftPanelLaminateCode,
-        rightPanelLaminateCode: cabinet.rightPanelLaminateCode,
         backPanelLaminateCode: cabinet.backPanelLaminateCode,
         height: cabinet.height,
         width: cabinet.width,
@@ -2989,10 +2833,10 @@ export default function Home() {
         widthReduction: cabinet.widthReduction
       });
     }
-    
+
     // Validation passed - now normalize the cabinet data
     let normalizedCabinet = normalizeCabinetData(cabinet);
-    
+
     // Handle configuration mode-specific normalization
     if (mode === 'basic') {
       // Basic mode: convert to shutter-only cabinet (like Quick Shutter)
@@ -3014,15 +2858,15 @@ export default function Home() {
         shelvesEnabled: false
       };
     }
-    
+
     // All validations passed - add the cabinet
     performAddCabinet(normalizedCabinet);
-    
+
     // ✅ FIX: Reset form after successfully adding so button works on next click
     // Load memory to restore values
     const shutterMemory = loadShutterFormMemory();
     const cabinetMemory = loadCabinetFormMemory();
-    
+
     form.reset({
       id: crypto.randomUUID(),
       name: `Shutter #${cabinets.length + 2}`,
@@ -3047,12 +2891,13 @@ export default function Home() {
       shutters: [],
       shutterLaminateCode: shutterMemory?.shutterLaminateCode || '',  // ✅ Keep laminate code
       shutterInnerLaminateCode: shutterMemory?.shutterInnerLaminateCode || '',  // ✅ Keep inner laminate
-      A: cabinetMemory.A || 'Apple Ply 16mm BWP',
-      backPanelPlywoodBrand: cabinetMemory.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
+      plywoodType: cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP',
+      backPanelPlywoodBrand: cabinetMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
+      shutterPlywoodBrand: shutterMemory?.shutterPlywoodBrand ?? (cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP'),
       topPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
-      bottomPanelLaminateCode: cabinetMemory.bottomPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
-      leftPanelLaminateCode: cabinetMemory.leftPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
-      rightPanelLaminateCode: cabinetMemory.rightPanelLaminateCode ?? cabinetMemory.topPanelLaminateCode ?? '',
+      bottomPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
+      leftPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
+      rightPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
       backPanelLaminateCode: cabinetMemory.backPanelLaminateCode ?? '',
       topPanelInnerLaminateCode: 'off white',
       bottomPanelInnerLaminateCode: 'off white',
@@ -3074,7 +2919,7 @@ export default function Home() {
   const addQuickCabinet = (type: CabinetType) => {
     const config = cabinetConfigs[type];
     const cabinetMemory = loadCabinetFormMemory(); // ✅ FIX: Load stored memory like regular form does
-    
+
     for (let i = 0; i < config.quantity; i++) {
       const baseCabinet: Cabinet = {
         id: crypto.randomUUID(),
@@ -3103,22 +2948,23 @@ export default function Home() {
           width: config.width,
           shutterCount: config.shutterQuantity
         }),
-        // ✅ IMPROVED: Restore ALL laminate codes from memory for quick cabinets
         topPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
-        bottomPanelLaminateCode: cabinetMemory.bottomPanelLaminateCode ?? '',
-        leftPanelLaminateCode: cabinetMemory.leftPanelLaminateCode ?? '',
-        rightPanelLaminateCode: cabinetMemory.rightPanelLaminateCode ?? '',
+        bottomPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
+        leftPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
+        rightPanelLaminateCode: cabinetMemory.topPanelLaminateCode ?? '',
         backPanelLaminateCode: cabinetMemory.backPanelLaminateCode ?? '',
-        shutterLaminateCode: cabinetMemory.shutterLaminateCode ?? '',
-        topPanelInnerLaminateCode: cabinetMemory.topPanelInnerLaminateCode ?? 'off white',
-        bottomPanelInnerLaminateCode: cabinetMemory.bottomPanelInnerLaminateCode ?? 'off white',
-        leftPanelInnerLaminateCode: cabinetMemory.leftPanelInnerLaminateCode ?? 'off white',
-        rightPanelInnerLaminateCode: cabinetMemory.rightPanelInnerLaminateCode ?? 'off white',
-        backPanelInnerLaminateCode: cabinetMemory.backPanelInnerLaminateCode ?? 'off white',
-        centerPostInnerLaminateCode: cabinetMemory.centerPostInnerLaminateCode ?? 'off white',
-        shelvesInnerLaminateCode: cabinetMemory.shelvesInnerLaminateCode ?? 'off white',
+        topPanelInnerLaminateCode: 'off white',
+        bottomPanelInnerLaminateCode: 'off white',
+        leftPanelInnerLaminateCode: 'off white',
+        rightPanelInnerLaminateCode: 'off white',
+        backPanelInnerLaminateCode: 'off white',
+        centerPostInnerLaminateCode: 'off white',
+        shelvesInnerLaminateCode: 'off white',
         innerLaminateCode: 'off white',
-        A: cabinetMemory.A ?? 'Apple Ply 16mm BWP',
+        plywoodType: cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP',
+        backPanelPlywoodBrand: cabinetMemory.backPanelPlywoodBrand ?? 'Apple ply 6mm BWP',
+        shutterPlywoodBrand: cabinetMemory.shutterPlywoodBrand ?? (cabinetMemory.plywoodType ?? 'Apple Ply 16mm BWP'),
+        shutterLaminateCode: cabinetMemory.shutterLaminateCode ?? '',
         shutterInnerLaminateCode: cabinetMemory.shutterInnerLaminateCode ?? '',
         backPanelWidthReduction: 0,
         backPanelHeightReduction: 0,
@@ -3130,16 +2976,16 @@ export default function Home() {
         shutterGrainDirection: false,
         shutterGaddi: false
       };
-      
+
       // ✅ DIRECT LINK: Compute grain direction using database preferences only
       const cabinet = {
         ...baseCabinet,
         ...computeGrainDirections(baseCabinet, woodGrainsPreferences)
       };
-      
+
       updateCabinets((prev: Cabinet[]) => [...prev, cabinet]);
     }
-    
+
     toast({
       title: "Quick Cabinets Added",
       description: `${config.quantity} ${cabinetTypes.find(t => t.value === type)?.label}(s) added to cutting list.`
@@ -3167,7 +3013,7 @@ export default function Home() {
     try {
       const projectName = "Maya Interiors Kitchen Project";
       const allPanels = cabinets.flatMap(generatePanels);
-      
+
       if (allPanels.length === 0) {
         toast({
           title: "No panels to export",
@@ -3184,7 +3030,7 @@ export default function Home() {
         ...allPanels.map(panel => [
           '', '', // Empty A and B columns
           panel.height,
-          panel.width, 
+          panel.width,
           panel.quantity || 1,
           panel.laminateCode || 'None',
           panel.type || 'Panel',
@@ -3193,7 +3039,7 @@ export default function Home() {
       ];
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
-      
+
       // Set column widths for better formatting
       ws['!cols'] = [
         { wch: 15 }, // A
@@ -3208,9 +3054,9 @@ export default function Home() {
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Cutting List");
-      
+
       XLSX.writeFile(wb, `${projectName.replace(/\s+/g, '_')}_GoogleSheets.xlsx`);
-      
+
       toast({
         title: "Google Sheets Format Exported",
         description: "Cutting list exported in Google Sheets compatible format with proper column layout"
@@ -3231,7 +3077,7 @@ export default function Home() {
     try {
       const projectName = "Maya Interiors Kitchen Project";
       const allPanels = cabinets.flatMap(generatePanels);
-      
+
       if (allPanels.length === 0) {
         toast({
           title: "No panels to export",
@@ -3244,26 +3090,26 @@ export default function Home() {
       const wb = XLSX.utils.book_new();
 
       // Sheet 1: Panel Details - Custom Format
-      const laminateGroups = new Map<string, Map<string, {count: number, panels: string[], thickness: number}>>();
-      
-      
+      const laminateGroups = new Map<string, Map<string, { count: number, panels: string[], thickness: number }>>();
+
+
       allPanels.forEach(panel => {
         const laminateKey = panel.laminateCode || 'None';
         const dimensionKey = `${panel.width}x${panel.height}`;
-        
+
         // Find the cabinet this panel belongs to for thickness
         const cabinet = cabinets.find(c => panel.name.startsWith(c.name));
         const thickness = 18;
-        
+
         if (!laminateGroups.has(laminateKey)) {
           laminateGroups.set(laminateKey, new Map());
         }
-        
+
         const dimensionMap = laminateGroups.get(laminateKey)!;
         if (!dimensionMap.has(dimensionKey)) {
-          dimensionMap.set(dimensionKey, {count: 0, panels: [], thickness});
+          dimensionMap.set(dimensionKey, { count: 0, panels: [], thickness });
         }
-        
+
         const entry = dimensionMap.get(dimensionKey)!;
         entry.count += 1;
         entry.panels.push(panel.name);
@@ -3271,51 +3117,51 @@ export default function Home() {
 
       const panelData: any[] = [];
       let laminateNo = 1;
-      
+
       laminateGroups.forEach((dimensions, laminateName) => {
         dimensions.forEach((data, dimensionKey) => {
           const [width, height] = dimensionKey.split('x').map(Number);
-          
+
           // Check if this is a top/bottom panel that needs dimension swapping
-          const isTopBottomPanel = data.panels.some(panelName => 
+          const isTopBottomPanel = data.panels.some(panelName =>
             panelName.includes('- Top') || panelName.includes('- Bottom')
           );
-          
+
           // Back panels should never have their dimensions swapped
-          const isBackPanel = data.panels.some(panelName => 
+          const isBackPanel = data.panels.some(panelName =>
             panelName.includes('- Back')
           );
-          
+
           // Get notes and plywood type from cabinets for these panels
           const cabinetNotes = data.panels.map(panelName => {
             const cabinet = cabinets.find(c => panelName.startsWith(c.name));
             return cabinet?.note || '';
           }).filter(note => note.trim()).join('; ');
-          
+
           // Get cabinet info for Quick Shutter entries
-          const relatedCabinets = data.panels.map(panelName => 
+          const relatedCabinets = data.panels.map(panelName =>
             cabinets.find(c => {
               // For Quick Shutter panels, match against cabinet name without qty
               const cabinetNameWithoutQty = c.name.replace(/ \(Qty: \d+\)/, '');
               return panelName.startsWith(c.name) || panelName.startsWith(cabinetNameWithoutQty);
             })
           ).filter(Boolean);
-          
+
           const quickShutterCabinet = relatedCabinets.find(cabinet => cabinet?.type === 'custom');
-          
+
           // Determine plywood type - check if this is a back panel first
-          let A = 'Apple Ply 16mm BWP';
+          let plywoodType = 'Apple Ply 16mm BWP';
           if (isBackPanel && relatedCabinets.length > 0) {
             // Use back panel plywood brand directly
-            A = relatedCabinets[0]?.A || 'Apple ply 6mm BWP';
+            plywoodType = relatedCabinets[0]?.backPanelPlywoodBrand || 'Apple ply 6mm BWP';
           } else if (quickShutterCabinet) {
             // Use Quick Shutter plywood type if available
-            A = quickShutterCabinet.A || 'Apple Ply 16mm BWP';
+            plywoodType = quickShutterCabinet.plywoodType || 'Apple Ply 16mm BWP';
           }
-          
+
           // Get laminate code - separate Base Cabinet vs Quick Shutter systems
           let laminateCodeValue = '';
-          
+
           // Check if this is a Quick Shutter entry (depth = 0)
           if (quickShutterCabinet && quickShutterCabinet.depth === 0) {
             // Use Quick Shutter laminate code system
@@ -3324,7 +3170,7 @@ export default function Home() {
             // Use Base Cabinet individual panel laminate codes (Front + Inner combined)
             const cabinet = relatedCabinets[0];
             const firstPanelName = data.panels[0];
-            
+
             if (firstPanelName.includes('- Top')) {
               laminateCodeValue = composeLaminateCode(
                 cabinet?.topPanelLaminateCode || '',
@@ -3352,7 +3198,7 @@ export default function Home() {
               );
             }
           }
-          
+
           // Determine other fields
           let roomNameValue = '';
           let noteValue = '';
@@ -3365,11 +3211,11 @@ export default function Home() {
             // CRITICAL FIX: Read GADDI from cabinet object, not from state variables
             const firstPanelName = data.panels[0];
             noteValue = firstPanelName; // Set the panel name to Note column
-            
+
             // Get the cabinet that owns this panel
             if (relatedCabinets.length > 0) {
               const cabinet = relatedCabinets[0];
-              
+
               // Check cabinet's GADDI flags (stored in cabinet object)
               if (firstPanelName.includes('- Top') && cabinet?.topPanelGaddi === true) {
                 gaddiThickness = 'Gaddi 8mm';
@@ -3382,9 +3228,9 @@ export default function Home() {
               }
             }
           }
-          
+
           panelData.push({
-            'Plywood Brand': A,
+            'Plywood Brand': plywoodType,
             'Laminate Code': laminateCodeValue,
             'Height': (isTopBottomPanel && !isBackPanel) ? width : height,
             'Width': (isTopBottomPanel && !isBackPanel) ? height : width,
@@ -3398,32 +3244,32 @@ export default function Home() {
       });
 
       const panelWs = XLSX.utils.json_to_sheet(panelData);
-      
+
       // Apply left alignment to all cells and brown color to back panel rows
       const totalRows = panelData.length + 1; // +1 for header row
       const totalCols = Object.keys(panelData[0] || {}).length;
-      
+
       // Apply left alignment to all cells - force text type for all cells
       for (let rowIndex = 0; rowIndex < totalRows; rowIndex++) {
         for (let colIndex = 0; colIndex < totalCols; colIndex++) {
           const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
           if (!panelWs[cellRef]) panelWs[cellRef] = { t: 's', v: '' };
-          
+
           // Force all cells to be text type to ensure left alignment works
           panelWs[cellRef].t = 's';
-          
+
           if (!panelWs[cellRef].s) panelWs[cellRef].s = {};
           panelWs[cellRef].s.alignment = { horizontal: 'left' };
         }
       }
-      
+
       // Apply brown color to back panel rows
       panelData.forEach((row, rowIndex) => {
         const isBackPanel = row['Note'] && row['Note'].includes('- Back Panel');
         if (isBackPanel) {
           // Excel row numbers start from 1, plus 1 for header row
           const excelRowNum = rowIndex + 2;
-          
+
           // Apply brown font color to all cells in the back panel row
           const columnCount = Object.keys(row).length;
           for (let colIndex = 0; colIndex < columnCount; colIndex++) {
@@ -3435,13 +3281,13 @@ export default function Home() {
           }
         }
       });
-      
+
       // Set dynamic column widths based on content length
       const columnHeaders = ['Plywood Brand', 'Laminate Code', 'Height', 'Width', 'No Qty', 'Front / Back', 'Gaddi 8mm', 'Note', 'Room Name'];
       const columnWidths = columnHeaders.map((header, colIndex) => {
         // Start with header length
         let maxLength = header.length;
-        
+
         // Check all data rows for this column
         panelData.forEach(row => {
           const cellValue = Object.values(row)[colIndex];
@@ -3450,13 +3296,13 @@ export default function Home() {
             maxLength = cellLength;
           }
         });
-        
+
         // Add some padding and set minimum width
         return { wch: Math.max(maxLength + 2, 10) };
       });
-      
+
       panelWs['!cols'] = columnWidths;
-      
+
       XLSX.utils.book_append_sheet(wb, panelWs, 'Panel Details');
 
       // Sheet 2: Project Summary
@@ -3476,8 +3322,8 @@ export default function Home() {
         'Laminate Code': group.laminateCode,
         'Panel Count': group.panels.length,
         'Total Area (m²)': group.totalArea.toFixed(3),
-        'Sample Dimensions': group.panels.slice(0, 3).map(p => `${p.width}×${p.height}mm`).join(', ') + 
-                           (group.panels.length > 3 ? ` (+${group.panels.length - 3} more)` : '')
+        'Sample Dimensions': group.panels.slice(0, 3).map(p => `${p.width}×${p.height}mm`).join(', ') +
+          (group.panels.length > 3 ? ` (+${group.panels.length - 3} more)` : '')
       }));
 
       const materialWs = XLSX.utils.json_to_sheet(materialData);
@@ -3670,8 +3516,8 @@ export default function Home() {
           <div class="cabinet-list">
             <h3>Cabinet Details</h3>
             ${cabinets.map(cabinet => {
-              const panels = generatePanels(cabinet);
-              return `
+      const panels = generatePanels(cabinet);
+      return `
                 <div class="cabinet-item">
                   <div class="cabinet-header">
                     ${cabinet.name} - ${cabinet.width}mm × ${cabinet.height}mm × ${cabinet.depth}mm
@@ -3686,7 +3532,7 @@ export default function Home() {
                   </div>
                 </div>
               `;
-            }).join('')}
+    }).join('')}
           </div>
 
           <div class="page-break"></div>
@@ -3764,7 +3610,7 @@ export default function Home() {
       });
       return;
     }
-    
+
     // Prevent concurrent saves
     if (isSaving) {
       return;
@@ -3805,17 +3651,27 @@ export default function Home() {
 
       // Generate PDF
       const allPanels = cabinets.flatMap(generatePanels);
-      
-      // ✅ STRONG ABC RULE - Use single source of truth function
-      const panelsByABC = groupPanelsByABC(allPanels);
-      
-      // Convert to expected format
-      const panelsByBrand = Object.entries(panelsByABC).reduce((acc, [groupKey, group]: [string, any]) => {
-        acc[groupKey] = {
-          brand: group.A,
-          laminateCode: group.laminateCode,
-          panels: group.panels
-        };
+      const panelsByBrand = allPanels.reduce((acc, panel) => {
+        const isBackPanel = panel.name.includes('- Back Panel');
+        const brand = isBackPanel
+          ? (panel.backPanelPlywoodBrand || panel.plywoodType || 'Apple ply 6mm BWP')
+          : (panel.plywoodType || 'Apple Ply 16mm BWP');
+        const laminateCode = panel.laminateCode || '';
+
+        // Use FULL laminate code (includes both front + inner laminate)
+        // 3-way matching: Plywood + Front Laminate + Inner Laminate
+        const fullLaminateCode = laminateCode.trim();
+
+        const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(fullLaminateCode)}`;
+
+        if (!acc[groupKey]) {
+          acc[groupKey] = {
+            brand,
+            laminateCode,
+            panels: []
+          };
+        }
+        acc[groupKey].panels.push(panel);
         return acc;
       }, {} as Record<string, { brand: string; laminateCode: string; panels: typeof allPanels }>);
 
@@ -3827,24 +3683,24 @@ export default function Home() {
         console.group('🔍 PDF EXPORT - Preparing parts');
         console.log('Group panels:', group.panels.length);
         console.groupEnd();
-        
+
         const rawParts = preparePartsForOptimizer(group.panels, woodGrainsPreferences);
-        
+
         // Remove falsy entries and ensure id is a string (prevents optimizer crashes)
         const parts = rawParts
           .filter((p: any) => Boolean(p))                       // remove undefined/null
           .map((p: any, i: number) => ({ ...p, id: String(p.id ?? p.name ?? `part-${i}`) }));
-        
+
         console.log('🌾 Optimizer received parts (first 10):', parts.slice(0, 10));
-        
+
         // Use multi-pass optimization for maximum efficiency
         const optimizedPanels = multiPassOptimize(parts, sheetWidth, sheetHeight);
         const result = { panels: optimizedPanels };
-        
+
         if (result && result.panels.length > 0) {
           const laminateDisplay = group.laminateCode || 'None';
           const isBackPanel = group.panels.some(p => p.name.includes('- Back Panel'));
-          
+
           brandResults.push({
             brand: group.brand,
             laminateCode: group.laminateCode,
@@ -3902,7 +3758,7 @@ export default function Home() {
       const result = await response.json() as { clientSlug: string; success: boolean };
 
       setShowSaveConfirmDialog(false);
-      
+
       toast({
         title: "Files Saved Successfully",
         description: `PDF and material list saved to folder: ${result.clientSlug}`,
@@ -3932,7 +3788,7 @@ export default function Home() {
   };
 
   const updateLaminateCode = (id: string, field: keyof LaminateCode, value: string | number) => {
-    setLaminateCodes(prev => prev.map(code => 
+    setLaminateCodes(prev => prev.map(code =>
       code.id === id ? { ...code, [field]: value } : code
     ));
   };
@@ -3948,7 +3804,7 @@ export default function Home() {
   const exportLaminateCodesToCSV = () => {
     const csvContent = [
       'Code,Name,Supplier,Thickness,Color',
-      ...laminateCodes.map(code => 
+      ...laminateCodes.map(code =>
         `${code.code},${code.name},${code.supplier || ''},${code.thickness || ''},${code.color || ''}`
       )
     ].join('\n');
@@ -3978,7 +3834,7 @@ export default function Home() {
       const csvContent = e.target?.result as string;
       const lines = csvContent.split('\n');
       const headers = lines[0].split(',');
-      
+
       const newCodes: LaminateCode[] = [];
       for (let i = 1; i < lines.length; i++) {
         if (lines[i].trim()) {
@@ -3988,7 +3844,7 @@ export default function Home() {
           const supplier = values[2]?.trim();
           const thickness = parseFloat(values[3]) || 0.8;
           const color = values[4]?.trim();
-          
+
           if (code && name) {
             newCodes.push({
               id: crypto.randomUUID(),
@@ -3997,14 +3853,14 @@ export default function Home() {
           }
         }
       }
-      
+
       setLaminateCodes(newCodes);
       toast({
         title: "Import Successful",
         description: `Imported ${newCodes.length} laminate codes from CSV.`
       });
     };
-    
+
     reader.readAsText(file);
     event.target.value = '';
   };
@@ -4021,9 +3877,9 @@ export default function Home() {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        
+
         const newCodes: LaminateCode[] = [];
-        
+
         // Skip header row (index 0)
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i] as any[];
@@ -4033,7 +3889,7 @@ export default function Home() {
             const supplier = row[2]?.toString().trim() || '';
             const thickness = parseFloat(row[3]) || 0.8;
             const color = row[4]?.toString().trim() || '';
-            
+
             if (code && name) {
               newCodes.push({
                 id: crypto.randomUUID(),
@@ -4042,7 +3898,7 @@ export default function Home() {
             }
           }
         }
-        
+
         setLaminateCodes(newCodes);
         toast({
           title: "Excel Import Successful",
@@ -4056,7 +3912,7 @@ export default function Home() {
         });
       }
     };
-    
+
     reader.readAsArrayBuffer(file);
     event.target.value = '';
   };
@@ -4066,49 +3922,61 @@ export default function Home() {
       <header className="border-b border-gray-200 bg-white shadow-xl">
         <div className="max-w-7xl mx-auto px-4 py-4">
           {/* Title Row */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3 mb-4">
             <i className="fas fa-tools text-2xl text-blue-400"></i>
             <h1 className="text-xl font-semibold text-gray-900 leading-none">Cutting List Generator</h1>
           </div>
+
+          {/* Buttons Row */}
+          <div className="flex items-center gap-3 justify-end overflow-x-auto">
+            {/* Calculation Logic Lock */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg">
+              <Label htmlFor="calc-lock" className="text-xs text-gray-700">
+                Logic
+              </Label>
+              <Switch
+                id="calc-lock"
+                checked={calculationLogicLocked}
+                onCheckedChange={setCalculationLogicLocked}
+                className="scale-75"
+              />
+              <i className={`fas ${calculationLogicLocked ? 'fa-lock text-blue-400' : 'fa-unlock text-blue-400'} text-sm`}></i>
+            </div>
+
+            <Button
+              onClick={exportToExcel}
+              size="sm"
+              className="inline-flex items-center bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white font-medium shadow-lg"
+            >
+              <i className="fas fa-file-excel mr-2"></i>
+              Export Excel
+            </Button>
+            <Button
+              onClick={exportToGoogleSheets}
+              size="sm"
+              className="inline-flex items-center bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white font-medium shadow-lg"
+            >
+              <i className="fab fa-google mr-2"></i>
+              Google Sheets
+            </Button>
+            <Button
+              onClick={printList}
+              size="sm"
+              variant="outline"
+              className="inline-flex items-center"
+            >
+              <i className="fas fa-print mr-2"></i>
+              Print List
+            </Button>
+          </div>
         </div>
       </header>
-      
-      {/* Fixed Bottom Toolbar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50 px-2 py-2">
-        <div className="flex items-center gap-2 justify-center overflow-x-auto max-w-7xl mx-auto">
-          <Button
-            onClick={exportToExcel}
-            size="sm"
-            className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-3 py-1"
-          >
-            <i className="fas fa-file-excel mr-1"></i>
-            Excel
-          </Button>
-          <Button
-            onClick={exportToGoogleSheets}
-            size="sm"
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1"
-          >
-            <i className="fab fa-google mr-1"></i>
-            Sheets
-          </Button>
-          <Button
-            onClick={printList}
-            size="sm"
-            variant="outline"
-            className="text-xs px-3 py-1"
-          >
-            <i className="fas fa-print mr-1"></i>
-            Print
-          </Button>
-        </div>
-      </div>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-20">
+      <main className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Controls */}
           <div className="lg:col-span-2 space-y-6">
-            
+
             {/* Quotation Card */}
             <Card className="bg-white border-gray-200 shadow-xl">
               <CardHeader>
@@ -4129,50 +3997,50 @@ export default function Home() {
                 </CardTitle>
               </CardHeader>
               {quotationDetailsVisible && (
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="quotation-number" className="text-sm font-medium">Quotation Number</Label>
+                        <Input
+                          id="quotation-number"
+                          type="text"
+                          value={quotationNumber}
+                          onChange={(e) => setQuotationNumber(e.target.value)}
+                          placeholder="e.g., Q-2025-001"
+                          className="text-sm"
+                          data-testid="input-quotation-number"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="quotation-date" className="text-sm font-medium">Date</Label>
+                        <Input
+                          id="quotation-date"
+                          type="date"
+                          value={quotationDate}
+                          onChange={(e) => setQuotationDate(e.target.value)}
+                          className="text-sm"
+                          data-testid="input-quotation-date"
+                        />
+                      </div>
+                    </div>
                     <div className="space-y-2">
-                      <Label htmlFor="quotation-number" className="text-sm font-medium">Quotation Number</Label>
+                      <Label htmlFor="quotation-notes" className="text-sm font-medium">Notes</Label>
                       <Input
-                        id="quotation-number"
+                        id="quotation-notes"
                         type="text"
-                        value={quotationNumber}
-                        onChange={(e) => setQuotationNumber(e.target.value)}
-                        placeholder="e.g., Q-2025-001"
+                        value={quotationNotes}
+                        onChange={(e) => setQuotationNotes(e.target.value)}
+                        placeholder="Add any additional notes for the quotation"
                         className="text-sm"
-                        data-testid="input-quotation-number"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="quotation-date" className="text-sm font-medium">Date</Label>
-                      <Input
-                        id="quotation-date"
-                        type="date"
-                        value={quotationDate}
-                        onChange={(e) => setQuotationDate(e.target.value)}
-                        className="text-sm"
-                        data-testid="input-quotation-date"
+                        data-testid="input-quotation-notes"
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="quotation-notes" className="text-sm font-medium">Notes</Label>
-                    <Input
-                      id="quotation-notes"
-                      type="text"
-                      value={quotationNotes}
-                      onChange={(e) => setQuotationNotes(e.target.value)}
-                      placeholder="Add any additional notes for the quotation"
-                      className="text-sm"
-                      data-testid="input-quotation-notes"
-                    />
-                  </div>
-                </div>
-              </CardContent>
+                </CardContent>
               )}
             </Card>
-            
+
             {/* Master Settings Card */}
             <Card className="bg-white border-gray-200 shadow-xl">
               <CardHeader>
@@ -4203,160 +4071,57 @@ export default function Home() {
                       </p>
                     </div>
 
-                    {/* Row 1: Cabinet and Shutter Plywood - Unified field like Laminate */}
+                    {/* Row 1: Plywood Brand */}
                     <div className="space-y-2">
-                      <Label className="text-sm font-medium">Cabinet and Shutter Plywood</Label>
-                      <div className="relative">
-                        <Input
-                          ref={masterPlywoodInputRef}
-                          type="text"
-                          value={masterPlywoodBrand || masterCustomPlywoodInput}
-                          onChange={(e) => {
-                            const inputValue = e.target.value;
-                            const inputElement = masterPlywoodInputRef.current;
-                            
-                            setMasterCustomPlywoodInput(inputValue);
-                            
-                            if (!inputElement || !inputValue.trim()) {
-                              return;
-                            }
-                            
-                            // Find first matching brand
-                            const matchingBrand = globalPlywoodBrandMemory.find(brand => 
-                              brand.toLowerCase().startsWith(inputValue.trim().toLowerCase())
+                      <Label className="text-sm font-medium">Plywood Brand</Label>
+                      <Select
+                        value={masterPlywoodBrand}
+                        onValueChange={(value) => {
+                          setMasterPlywoodBrand(value);
+                          updateAllCabinetsPlywood(value);
+                        }}
+                        data-testid="select-master-plywood"
+                      >
+                        <SelectTrigger className="text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {plywoodBrandMemoryData.map((brand: PlywoodBrandMemory) => (
+                            <SelectItem key={brand.id} value={brand.brand}>
+                              {brand.brand}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="text"
+                        value={masterCustomPlywoodInput}
+                        onChange={(e) => setMasterCustomPlywoodInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && masterCustomPlywoodInput.trim()) {
+                            e.preventDefault();
+                            const newBrand = masterCustomPlywoodInput.trim();
+
+                            // Check if brand already exists
+                            const exists = plywoodBrandMemoryData.some(
+                              (b: PlywoodBrandMemory) => b.brand.toLowerCase() === newBrand.toLowerCase()
                             );
-                            
-                            if (matchingBrand) {
-                              // Set full suggestion
-                              setMasterCustomPlywoodInput(matchingBrand);
-                              // Highlight the auto-filled portion
-                              setTimeout(() => {
-                                inputElement.setSelectionRange(inputValue.length, matchingBrand.length);
-                              }, 0);
+
+                            if (!exists) {
+                              // Save new brand to memory
+                              savePlywoodBrandMutation.mutate(newBrand);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Tab' && masterCustomPlywoodInput.trim()) {
-                              // Accept the autofill suggestion
-                              e.preventDefault();
-                              const inputElement = masterPlywoodInputRef.current;
-                              if (inputElement) {
-                                inputElement.setSelectionRange(
-                                  masterCustomPlywoodInput.length,
-                                  masterCustomPlywoodInput.length
-                                );
-                              }
-                            } else if (e.key === 'Enter' && masterCustomPlywoodInput.trim()) {
-                              e.preventDefault();
-                              const brandToSave = masterCustomPlywoodInput.trim();
-                              
-                              // Save to database if new
-                              const exists = plywoodBrandMemoryData.some(
-                                (b: PlywoodBrandMemory) => b.brand.toLowerCase() === brandToSave.toLowerCase()
-                              );
-                              
-                              if (!exists) {
-                                savePlywoodBrandMutation.mutate(brandToSave);
-                              }
-                              
-                              // Update all cabinets
-                              updateAllCabinetsPlywood(brandToSave);
-                              
-                              // Clear field after Enter - ready for next use
-                              setMasterCustomPlywoodInput('');
-                              setMasterPlywoodBrand('');
-                              
-                              // Close dropdown
-                              if (masterPlywoodDropdownRef.current) {
-                                masterPlywoodDropdownRef.current.open = false;
-                              }
-                              
-                              // Keep focus for next entry
-                              masterPlywoodInputRef.current?.focus();
-                            } else if (e.key === 'Escape') {
-                              // Clear field
-                              setMasterCustomPlywoodInput('');
-                              setMasterPlywoodBrand('');
-                              
-                              if (masterPlywoodDropdownRef.current) {
-                                masterPlywoodDropdownRef.current.open = false;
-                              }
-                            }
-                          }}
-                          onFocus={() => {
-                            // Clear brand when focusing to type new one
-                            if (masterPlywoodBrand && !masterCustomPlywoodInput) {
-                              setMasterPlywoodBrand('');
-                            }
-                          }}
-                          placeholder="Type plywood brand"
-                          className="text-sm"
-                          data-testid="input-master-plywood"
-                        />
-                        {masterPlywoodBrand && !masterCustomPlywoodInput && (
-                          <button
-                            onClick={() => {
-                              setMasterPlywoodBrand('');
-                              masterPlywoodInputRef.current?.focus();
-                            }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                            title="Clear selection"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                      
-                      {/* Hint for adding new brands */}
-                      {masterCustomPlywoodInput && masterCustomPlywoodInput.length >= 3 && !globalPlywoodBrandMemory.includes(masterCustomPlywoodInput) && (
-                        <div className="text-xs text-green-600 mt-1 font-medium">
-                          ↵ Press Enter to save "{masterCustomPlywoodInput}"
-                        </div>
-                      )}
-                      
-                      {/* Saved Brands with Select and Delete */}
-                      {globalPlywoodBrandMemory.length > 0 && (
-                        <details className="mt-2" ref={masterPlywoodDropdownRef}>
-                          <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-800 font-semibold">
-                            ▼ Manage Saved Brands ({globalPlywoodBrandMemory.length})
-                          </summary>
-                          <div className="mt-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white">
-                            {globalPlywoodBrandMemory.map((brand, index) => (
-                              <div 
-                                key={index}
-                                className={`flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
-                                  masterPlywoodBrand === brand 
-                                    ? 'bg-blue-50 text-blue-700' 
-                                    : ''
-                                }`}
-                                onClick={() => {
-                                  setMasterPlywoodBrand(brand);
-                                  setMasterCustomPlywoodInput('');
-                                  updateAllCabinetsPlywood(brand);
-                                  
-                                  if (masterPlywoodDropdownRef.current) {
-                                    masterPlywoodDropdownRef.current.open = false;
-                                  }
-                                }}
-                              >
-                                <span className="text-sm">
-                                  {masterPlywoodBrand === brand && '✓ '}{brand}
-                                </span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    deletePlywoodBrandMutation.mutate(brand);
-                                  }}
-                                  className="text-red-500 hover:text-red-700 ml-2 text-xs"
-                                  title="Delete brand"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
+
+                            // Update master setting and all cabinets
+                            setMasterPlywoodBrand(newBrand);
+                            updateAllCabinetsPlywood(newBrand);
+                            setMasterCustomPlywoodInput('');
+                          }
+                        }}
+                        placeholder="Type custom plywood brand"
+                        className="text-xs"
+                        data-testid="input-master-custom-plywood"
+                      />
                     </div>
 
                     {/* Row 2: Laminate with Wood Grains button */}
@@ -4372,18 +4137,18 @@ export default function Home() {
                               onChange={async (e) => {
                                 const inputValue = e.target.value;
                                 const inputElement = masterLaminateInputRef.current;
-                                
+
                                 setMasterCustomLaminateInput(inputValue);
-                                
+
                                 if (!inputElement || !inputValue.trim()) {
                                   return;
                                 }
-                                
+
                                 // Find first matching code
-                                const matchingCode = globalLaminateMemory.find(code => 
+                                const matchingCode = globalLaminateMemory.find(code =>
                                   code.toLowerCase().startsWith(inputValue.trim().toLowerCase())
                                 );
-                                
+
                                 if (matchingCode) {
                                   // Set full suggestion
                                   setMasterCustomLaminateInput(matchingCode);
@@ -4407,12 +4172,15 @@ export default function Home() {
                                 } else if (e.key === 'Enter' && masterCustomLaminateInput.trim()) {
                                   e.preventDefault();
                                   const codeToSave = masterCustomLaminateInput.trim();
-                                  
+
                                   // Save to database if new
                                   if (!globalLaminateMemory.includes(codeToSave)) {
                                     saveLaminateCodeMutation.mutate(codeToSave);
                                   }
-                                  
+
+                                  // Set as selected code (but don't apply to all panels)
+                                  setMasterLaminateCode(codeToSave);
+
                                   // ✅ CRITICAL FIX: Mark current form panel laminates as user-selected
                                   // This ensures validation passes when adding the cabinet
                                   updateLaminateWithTracking('topPanelLaminateCode', codeToSave, 'user');
@@ -4420,25 +4188,21 @@ export default function Home() {
                                   updateLaminateWithTracking('leftPanelLaminateCode', codeToSave, 'user');
                                   updateLaminateWithTracking('rightPanelLaminateCode', codeToSave, 'user');
                                   updateLaminateWithTracking('backPanelLaminateCode', codeToSave, 'user');
-                                  
+
                                   // ✅ REMOVED: Old auto-load wood grains preference logic - handled by DIRECT LINK system
-                                  
-                                  // ✅ Clear field after Enter - ready for next use (Save Laminate Godown mode)
+
+                                  // Clear input
                                   setMasterCustomLaminateInput('');
-                                  setMasterLaminateCode('');
-                                  
+
                                   // ✅ Close dropdown after saving new code
                                   if (masterLaminateDropdownRef.current) {
                                     masterLaminateDropdownRef.current.open = false;
                                   }
-                                  
-                                  // Keep focus on the input for next entry
-                                  masterLaminateInputRef.current?.focus();
                                 } else if (e.key === 'Escape') {
                                   // Clear field
                                   setMasterCustomLaminateInput('');
                                   setMasterLaminateCode('');
-                                  
+
                                   // ✅ Close dropdown after Escape
                                   if (masterLaminateDropdownRef.current) {
                                     masterLaminateDropdownRef.current.open = false;
@@ -4468,14 +4232,14 @@ export default function Home() {
                               </button>
                             )}
                           </div>
-                          
+
                           {/* Hint for adding new codes */}
                           {masterCustomLaminateInput && masterCustomLaminateInput.length >= 3 && !globalLaminateMemory.includes(masterCustomLaminateInput) && (
                             <div className="text-xs text-green-600 mt-1 font-medium">
                               ↵ Press Enter to save "{masterCustomLaminateInput}"
                             </div>
                           )}
-                          
+
                           {/* Saved Codes with Select and Delete */}
                           {globalLaminateMemory.length > 0 && (
                             <details className="mt-2" open ref={masterLaminateDropdownRef}>
@@ -4484,26 +4248,25 @@ export default function Home() {
                               </summary>
                               <div className="mt-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md bg-white">
                                 {globalLaminateMemory.map((code, index) => (
-                                  <div 
-                                    key={index} 
-                                    className={`flex items-center justify-between px-2 py-1.5 text-xs border-b border-gray-100 last:border-0 ${
-                                      masterLaminateCode === code 
-                                        ? 'bg-blue-100 hover:bg-blue-150' 
-                                        : 'hover:bg-gray-50 cursor-pointer'
-                                    }`}
+                                  <div
+                                    key={index}
+                                    className={`flex items-center justify-between px-2 py-1.5 text-xs border-b border-gray-100 last:border-0 ${masterLaminateCode === code
+                                      ? 'bg-blue-100 hover:bg-blue-150'
+                                      : 'hover:bg-gray-50 cursor-pointer'
+                                      }`}
                                   >
-                                    <span 
+                                    <span
                                       className="flex-1 cursor-pointer font-medium"
                                       onClick={async () => {
                                         // Select this code
                                         setMasterLaminateCode(code);
                                         setMasterCustomLaminateInput('');
-                                        
+
                                         // ✅ Close dropdown after selecting a code
                                         if (masterLaminateDropdownRef.current) {
                                           masterLaminateDropdownRef.current.open = false;
                                         }
-                                        
+
                                         // ✅ CRITICAL FIX: Mark current form panel laminates as user-selected
                                         // This ensures validation passes when adding the cabinet
                                         updateLaminateWithTracking('topPanelLaminateCode', code, 'user');
@@ -4511,7 +4274,7 @@ export default function Home() {
                                         updateLaminateWithTracking('leftPanelLaminateCode', code, 'user');
                                         updateLaminateWithTracking('rightPanelLaminateCode', code, 'user');
                                         updateLaminateWithTracking('backPanelLaminateCode', code, 'user');
-                                        
+
                                         // ✅ REMOVED: Old masterWoodGrains toggle logic - system now uses DIRECT LINK to database
                                         // Wood grain preferences are handled automatically by the auto-update useEffect
                                       }}
@@ -4547,7 +4310,7 @@ export default function Home() {
                             Optimize Plywood Usage
                           </Label>
                           <p className="text-xs text-gray-500 leading-relaxed">
-                            Panels are grouped only when ALL materials match: Plywood Brand + Front Laminate + Inner Laminate. 
+                            Panels are grouped only when ALL materials match: Plywood Brand + Front Laminate + Inner Laminate.
                             This ensures consistent material quality on each sheet.
                           </p>
                         </div>
@@ -4636,7 +4399,7 @@ export default function Home() {
                             Toggle wood grain for each laminate code. When enabled, panels use dimensional mapping for optimization.
                           </p>
                         </div>
-                        
+
                         {/* Laminate codes list with toggles */}
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                           {globalLaminateMemory.length === 0 ? (
@@ -4700,7 +4463,7 @@ export default function Home() {
                 </CardContent>
               )}
             </Card>
-            
+
             {/* Project Details Card */}
             <Card ref={projectDetailsSectionRef} className="bg-white border-gray-200 shadow-xl">
               <CardHeader>
@@ -4722,63 +4485,63 @@ export default function Home() {
               </CardHeader>
               {projectDetailsVisible && (
                 <CardContent>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Client Name</Label>
-                      <Input
-                        type="text"
-                        value={clientName}
-                        onChange={(e) => setClientName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && clientName.trim() && cabinets.length > 0) {
-                            handleSaveToClientFolder();
-                          }
-                        }}
-                        placeholder="Enter client name (press Enter to save)"
-                        disabled={!woodGrainsReady}
-                        className="text-sm"
-                        data-testid="input-client-name"
-                      />
-                      {clientName.trim() && (
-                        <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
-                          <i className="fas fa-folder text-blue-500"></i>
-                          <span className="font-mono bg-gray-100 px-2 py-1 rounded">
-                            /clients/{clientName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-')}/
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label>Room</Label>
-                      <div className="flex space-x-1">
-                        <Select value={selectedRoom} onValueChange={setSelectedRoom}>
-                          <SelectTrigger className="text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Kitchen">Kitchen</SelectItem>
-                            <SelectItem value="Bedroom">Bedroom</SelectItem>
-                            <SelectItem value="Living Room">Living Room</SelectItem>
-                            <SelectItem value="Bathroom">Bathroom</SelectItem>
-                            <SelectItem value="Office">Office</SelectItem>
-                            <SelectItem value="Custom">Custom</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        {selectedRoom === 'Custom' && (
-                          <Input
-                            type="text"
-                            value={customRoomName}
-                            onChange={(e) => setCustomRoomName(e.target.value)}
-                            placeholder="Room name"
-                            className="text-sm"
-                          />
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Client Name</Label>
+                        <Input
+                          type="text"
+                          value={clientName}
+                          onChange={(e) => setClientName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && clientName.trim() && cabinets.length > 0) {
+                              handleSaveToClientFolder();
+                            }
+                          }}
+                          placeholder="Enter client name (press Enter to save)"
+                          disabled={!woodGrainsReady}
+                          className="text-sm"
+                          data-testid="input-client-name"
+                        />
+                        {clientName.trim() && (
+                          <div className="flex items-center gap-2 text-xs text-gray-600 mt-1">
+                            <i className="fas fa-folder text-blue-500"></i>
+                            <span className="font-mono bg-gray-100 px-2 py-1 rounded">
+                              /clients/{clientName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-')}/
+                            </span>
+                          </div>
                         )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Room</Label>
+                        <div className="flex space-x-1">
+                          <Select value={selectedRoom} onValueChange={setSelectedRoom}>
+                            <SelectTrigger className="text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Kitchen">Kitchen</SelectItem>
+                              <SelectItem value="Bedroom">Bedroom</SelectItem>
+                              <SelectItem value="Living Room">Living Room</SelectItem>
+                              <SelectItem value="Bathroom">Bathroom</SelectItem>
+                              <SelectItem value="Office">Office</SelectItem>
+                              <SelectItem value="Custom">Custom</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {selectedRoom === 'Custom' && (
+                            <Input
+                              type="text"
+                              value={customRoomName}
+                              onChange={(e) => setCustomRoomName(e.target.value)}
+                              placeholder="Room name"
+                              className="text-sm"
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
                 </CardContent>
               )}
             </Card>
@@ -4811,15 +4574,15 @@ export default function Home() {
                     form.setValue('configurationMode', value as 'basic' | 'advanced');
                   }} className="mb-6">
                     <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger 
-                        value="basic" 
+                      <TabsTrigger
+                        value="basic"
                         className="text-sm data-[state=active]:bg-blue-500 data-[state=active]:text-white"
                       >
                         <i className="fas fa-lightning mr-2"></i>
                         Basic (Quick Shutter)
                       </TabsTrigger>
-                      <TabsTrigger 
-                        value="advanced" 
+                      <TabsTrigger
+                        value="advanced"
                         className="text-sm data-[state=active]:bg-green-500 data-[state=active]:text-white"
                       >
                         <i className="fas fa-drafting-compass mr-2"></i>
@@ -4852,7 +4615,7 @@ export default function Home() {
                             <i className="fas fa-lightning text-blue-500"></i>
                             Quick Shutter Materials
                           </div>
-                          
+
                           {/* Shutter Plywood Brand */}
                           <div className="space-y-2">
                             <Label>Shutter Plywood Brand</Label>
@@ -4863,7 +4626,7 @@ export default function Home() {
                                   role="combobox"
                                   className="w-full justify-between text-sm h-10"
                                 >
-                                  {watchedValues.A || 'Select plywood brand'}
+                                  {watchedValues.shutterPlywoodBrand || 'Select plywood brand'}
                                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                                 </Button>
                               </PopoverTrigger>
@@ -4872,7 +4635,7 @@ export default function Home() {
                                   <CommandInput placeholder="Type to filter brands..." className="text-sm" />
                                   <CommandList>
                                     <CommandEmpty>
-                                      {plywoodBrandMemoryData.length === 0 
+                                      {plywoodBrandMemoryData.length === 0
                                         ? 'No saved brands. Add brands in Master Settings.'
                                         : 'No matching brands found.'}
                                     </CommandEmpty>
@@ -4882,14 +4645,13 @@ export default function Home() {
                                           key={brand.id}
                                           value={brand.brand}
                                           onSelect={(currentValue) => {
-                                            form.setValue('A', currentValue);
+                                            form.setValue('shutterPlywoodBrand', currentValue);
                                             setShutterPlywoodOpen(false);
                                           }}
                                         >
                                           <Check
-                                            className={`mr-2 h-4 w-4 ${
-                                              watchedValues.A === brand.brand ? 'opacity-100' : 'opacity-0'
-                                            }`}
+                                            className={`mr-2 h-4 w-4 ${watchedValues.shutterPlywoodBrand === brand.brand ? 'opacity-100' : 'opacity-0'
+                                              }`}
                                           />
                                           {brand.brand}
                                         </CommandItem>
@@ -4907,607 +4669,707 @@ export default function Home() {
                       {/* ADVANCED MODE: Cabinet Fields */}
                       {cabinetConfigMode === 'advanced' && (
                         <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label>Room Name</Label>
-                          <Select
-                            value={watchedValues.roomName || ''}
-                            onValueChange={(value) => {
-                              form.setValue('roomName', value);
-                              focusNextField('roomName');
-                            }}
-                          >
-                            <SelectTrigger 
-                              className="text-sm"
-                              ref={(el) => registerFieldRef('roomName', el)}
+                          <div className="space-y-2">
+                            <Label>Room Name</Label>
+                            <Select
+                              value={watchedValues.roomName || ''}
+                              onValueChange={(value) => {
+                                form.setValue('roomName', value);
+                                focusNextField('roomName');
+                              }}
                             >
-                              <SelectValue placeholder="Select room" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Kitchen">Kitchen</SelectItem>
-                              <SelectItem value="Hall">Hall</SelectItem>
-                              <SelectItem value="Bedroom 1">Bedroom 1</SelectItem>
-                              <SelectItem value="Bedroom 2">Bedroom 2</SelectItem>
-                              <SelectItem value="Bedroom 3">Bedroom 3</SelectItem>
-                              <SelectItem value="Living Room">Living Room</SelectItem>
-                              <SelectItem value="Dining Room">Dining Room</SelectItem>
-                              <SelectItem value="Study Room">Study Room</SelectItem>
-                              <SelectItem value="Bathroom">Bathroom</SelectItem>
-                              <SelectItem value="Balcony">Balcony</SelectItem>
-                              <SelectItem value="Manual Type">Manual Type</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label>Cabinet Name</Label>
-                          <Input
-                            {...form.register('name')}
-                            className="text-sm"
-                            data-field-name="cabinetName"
-                          />
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <Label>Plywood Brand</Label>
-                          <Popover open={cabinetPlywoodOpen} onOpenChange={(open) => {
-                            if (open) {
-                              setCabinetPlywoodOpen(true);
-                            } else {
-                              setTimeout(() => setCabinetPlywoodOpen(false), 100);
-                            }
-                          }}>
-                            <PopoverTrigger asChild>
-                              <Button
-                                variant="outline"
-                                role="combobox"
-                                className="w-full justify-between text-sm h-10"
-                                ref={(el) => registerFieldRef('plywoodBrand', el)}
+                              <SelectTrigger
+                                className="text-sm"
+                                ref={(el) => registerFieldRef('roomName', el)}
                               >
-                                {watchedValues.A || 'Select plywood brand'}
-                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[300px] p-0">
-                              <Command>
-                                <CommandInput placeholder="Type to filter brands..." className="text-sm" />
-                                <CommandList>
-                                  <CommandEmpty>
-                                    {plywoodBrandMemoryData.length === 0 
-                                      ? 'No saved brands. Add brands in Master Settings.'
-                                      : 'No matching brands found.'}
-                                  </CommandEmpty>
-                                  <CommandGroup>
-                                    {plywoodBrandMemoryData.map((brand: PlywoodBrandMemory) => (
-                                      <CommandItem
-                                        key={brand.id}
-                                        value={brand.brand}
-                                        onSelect={(currentValue) => {
-                                          form.setValue('A', currentValue);
-                                          if (panelsLinked) {
-                                            syncPlywoodBrand(currentValue, 'main');
-                                          }
-                                          setCabinetPlywoodOpen(false);
-                                          focusNextField('plywoodBrand');
-                                        }}
-                                      >
-                                        <Check
-                                          className={`mr-2 h-4 w-4 ${
-                                            watchedValues.A === brand.brand ? 'opacity-100' : 'opacity-0'
-                                          }`}
-                                        />
-                                        {brand.brand}
-                                      </CommandItem>
-                                    ))}
-                                  </CommandGroup>
-                                </CommandList>
-                              </Command>
-                            </PopoverContent>
-                          </Popover>
-                        </div>
+                                <SelectValue placeholder="Select room" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Kitchen">Kitchen</SelectItem>
+                                <SelectItem value="Hall">Hall</SelectItem>
+                                <SelectItem value="Bedroom 1">Bedroom 1</SelectItem>
+                                <SelectItem value="Bedroom 2">Bedroom 2</SelectItem>
+                                <SelectItem value="Bedroom 3">Bedroom 3</SelectItem>
+                                <SelectItem value="Living Room">Living Room</SelectItem>
+                                <SelectItem value="Dining Room">Dining Room</SelectItem>
+                                <SelectItem value="Study Room">Study Room</SelectItem>
+                                <SelectItem value="Bathroom">Bathroom</SelectItem>
+                                <SelectItem value="Balcony">Balcony</SelectItem>
+                                <SelectItem value="Manual Type">Manual Type</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
 
-                        <div className="space-y-2">
-                          <Label>Back Panel Plywood</Label>
-                          <Popover open={backPanelPlywoodOpen} onOpenChange={(open) => {
-                            if (open) {
-                              setBackPanelPlywoodOpen(true);
-                            } else {
-                              setTimeout(() => setBackPanelPlywoodOpen(false), 100);
-                            }
-                          }}>
-                            <PopoverTrigger asChild>
-                              <Button
-                                variant="outline"
-                                role="combobox"
-                                className="w-full justify-between text-sm h-10"
-                                data-testid="select-back-panel-plywood-brand"
-                                ref={(el) => registerFieldRef('backPanelPlywood', el)}
-                              >
-                                {watchedValues.backPanelPlywoodBrand || 'Select plywood brand'}
-                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[300px] p-0">
-                              <Command>
-                                <CommandInput placeholder="Type to filter brands..." className="text-sm" />
-                                <CommandList>
-                                  <CommandEmpty>
-                                    {plywoodBrandMemoryData.length === 0 
-                                      ? 'No saved brands. Add brands in Master Settings.'
-                                      : 'No matching brands found.'}
-                                  </CommandEmpty>
-                                  <CommandGroup>
-                                    {plywoodBrandMemoryData.map((brand: PlywoodBrandMemory) => (
-                                      <CommandItem
-                                        key={brand.id}
-                                        value={brand.brand}
-                                        onSelect={(currentValue) => {
-                                          form.setValue('backPanelPlywoodBrand', currentValue);
-                                          setBackPanelPlywoodOpen(false);
-                                          focusNextField('backPanelPlywood');
-                                        }}
-                                      >
-                                        <Check
-                                          className={`mr-2 h-4 w-4 ${
-                                            watchedValues.backPanelPlywoodBrand === brand.brand ? 'opacity-100' : 'opacity-0'
-                                          }`}
-                                        />
-                                        {brand.brand}
-                                      </CommandItem>
-                                    ))}
-                                  </CommandGroup>
-                                </CommandList>
-                              </Command>
-                            </PopoverContent>
-                          </Popover>
+                          <div className="space-y-2">
+                            <Label>Cabinet Name</Label>
+                            <Input
+                              {...form.register('name')}
+                              className="text-sm"
+                              data-field-name="cabinetName"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Plywood Brand</Label>
+                            <Popover open={cabinetPlywoodOpen} onOpenChange={(open) => {
+                              if (open) {
+                                setCabinetPlywoodOpen(true);
+                              } else {
+                                setTimeout(() => setCabinetPlywoodOpen(false), 100);
+                              }
+                            }}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  className="w-full justify-between text-sm h-10"
+                                  ref={(el) => registerFieldRef('plywoodBrand', el)}
+                                >
+                                  {watchedValues.plywoodType || 'Select plywood brand'}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[300px] p-0">
+                                <Command>
+                                  <CommandInput placeholder="Type to filter brands..." className="text-sm" />
+                                  <CommandList>
+                                    <CommandEmpty>
+                                      {plywoodBrandMemoryData.length === 0
+                                        ? 'No saved brands. Add brands in Master Settings.'
+                                        : 'No matching brands found.'}
+                                    </CommandEmpty>
+                                    <CommandGroup>
+                                      {plywoodBrandMemoryData.map((brand: PlywoodBrandMemory) => (
+                                        <CommandItem
+                                          key={brand.id}
+                                          value={brand.brand}
+                                          onSelect={(currentValue) => {
+                                            form.setValue('plywoodType', currentValue);
+                                            if (panelsLinked) {
+                                              syncPlywoodBrand(currentValue, 'main');
+                                            }
+                                            setCabinetPlywoodOpen(false);
+                                            focusNextField('plywoodBrand');
+                                          }}
+                                        >
+                                          <Check
+                                            className={`mr-2 h-4 w-4 ${watchedValues.plywoodType === brand.brand ? 'opacity-100' : 'opacity-0'
+                                              }`}
+                                          />
+                                          {brand.brand}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Front Laminate</Label>
+                              <Popover open={cabinetConfigLaminateOpen} onOpenChange={setCabinetConfigLaminateOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    role="combobox"
+                                    className="w-full justify-between text-sm h-10"
+                                    ref={(el) => registerFieldRef('laminateCode', el)}
+                                  >
+                                    {watchedValues.topPanelLaminateCode || 'Select front laminate'}
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[300px] p-0">
+                                  <Command>
+                                    <CommandInput placeholder="Type to filter codes..." className="text-sm" />
+                                    <CommandList>
+                                      <CommandEmpty>
+                                        {globalLaminateMemory.length === 0
+                                          ? 'No saved codes. Add codes in Master Settings.'
+                                          : 'No matching codes found.'}
+                                      </CommandEmpty>
+                                      <CommandGroup>
+                                        {globalLaminateMemory.map((code) => (
+                                          <CommandItem
+                                            key={code}
+                                            value={code}
+                                            onSelect={async (currentValue) => {
+                                              // Mark this as user-selected (not auto-filled)
+                                              updateLaminateWithTracking('topPanelLaminateCode', currentValue, 'user');
+
+                                              // Auto-sync to Top/Bottom/Left/Right panels (respects panelsLinked toggle)
+                                              // These will be marked as user-selected because the origin was user-driven
+                                              syncCabinetConfigFrontLaminate(currentValue, true);
+
+                                              // Auto-mark all Inner Laminates as user-selected (they have sensible defaults)
+                                              if (panelsLinked) {
+                                                markLaminateAsUserSelected('topPanelInnerLaminateCode');
+                                                markLaminateAsUserSelected('bottomPanelInnerLaminateCode');
+                                                markLaminateAsUserSelected('leftPanelInnerLaminateCode');
+                                                markLaminateAsUserSelected('rightPanelInnerLaminateCode');
+                                                markLaminateAsUserSelected('backPanelInnerLaminateCode');
+                                              }
+
+                                              // Auto-sync laminate code to all shutters
+                                              const currentShutters = watchedValues.shutters || [];
+                                              if (currentShutters.length > 0) {
+                                                const updatedShutters = currentShutters.map(shutter => ({
+                                                  ...shutter,
+                                                  laminateCode: currentValue
+                                                }));
+                                                form.setValue('shutters', updatedShutters);
+                                              }
+
+                                              // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
+                                              if (currentValue && currentValue !== 'Manual Type') {
+                                                const baseCode = currentValue.split('+')[0].trim();
+                                                const hasWoodGrain = woodGrainsPreferences[baseCode] === true;
+                                                form.setValue('topPanelGrainDirection', hasWoodGrain);
+                                                form.setValue('bottomPanelGrainDirection', hasWoodGrain);
+                                                form.setValue('leftPanelGrainDirection', hasWoodGrain);
+                                                form.setValue('rightPanelGrainDirection', hasWoodGrain);
+                                                form.setValue('backPanelGrainDirection', hasWoodGrain);
+                                                form.setValue('shutterGrainDirection', hasWoodGrain);
+                                              }
+                                              setCabinetConfigLaminateOpen(false);
+                                              focusNextField('laminateCode');
+                                            }}
+                                            className="text-sm"
+                                          >
+                                            <Check
+                                              className={`mr-2 h-4 w-4 ${watchedValues.topPanelLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                }`}
+                                            />
+                                            {code}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label>Inner Laminate</Label>
+                              <Popover open={cabinetConfigInnerLaminateOpen} onOpenChange={setCabinetConfigInnerLaminateOpen}>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    role="combobox"
+                                    className="w-full justify-between text-sm h-10"
+                                  >
+                                    {watchedValues.innerLaminateCode || 'Select inner laminate'}
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[300px] p-0">
+                                  <Command>
+                                    <CommandInput placeholder="Type to filter codes..." className="text-sm" />
+                                    <CommandList>
+                                      <CommandEmpty>
+                                        {globalLaminateMemory.length === 0
+                                          ? 'No saved codes. Add codes in Master Settings.'
+                                          : 'No matching codes found.'}
+                                      </CommandEmpty>
+                                      <CommandGroup>
+                                        {globalLaminateMemory.map((code) => (
+                                          <CommandItem
+                                            key={code}
+                                            value={code}
+                                            onSelect={async (currentValue) => {
+                                              // Mark this as user-selected (not auto-filled)
+                                              updateLaminateWithTracking('innerLaminateCode', currentValue, 'user');
+
+                                              // Auto-sync to Top/Bottom/Left/Right panels (respects panelsLinked toggle)
+                                              // These will be marked as user-selected because the origin was user-driven
+                                              syncCabinetConfigInnerLaminate(currentValue, true);
+
+                                              // Auto-sync inner laminate code to all shutters
+                                              const currentShutters = watchedValues.shutters || [];
+                                              if (currentShutters.length > 0) {
+                                                const updatedShutters = currentShutters.map(shutter => ({
+                                                  ...shutter,
+                                                  innerLaminateCode: currentValue
+                                                }));
+                                                form.setValue('shutters', updatedShutters);
+                                              }
+
+                                              // Fetch and apply inner wood grains preference
+                                              if (currentValue && currentValue !== 'Manual Type') {
+                                                try {
+                                                  const response = await fetch(`/api/wood-grains-preference/${encodeURIComponent(currentValue)}`);
+                                                  const data = await response.json();
+
+                                                  if (data.woodGrainsEnabled) {
+                                                    form.setValue('topPanelInnerGrainDirection', true);
+                                                    form.setValue('bottomPanelInnerGrainDirection', true);
+                                                    form.setValue('leftPanelInnerGrainDirection', true);
+                                                    form.setValue('rightPanelInnerGrainDirection', true);
+                                                    form.setValue('backPanelInnerGrainDirection', true);
+                                                  } else {
+                                                    form.setValue('topPanelInnerGrainDirection', false);
+                                                    form.setValue('bottomPanelInnerGrainDirection', false);
+                                                    form.setValue('leftPanelInnerGrainDirection', false);
+                                                    form.setValue('rightPanelInnerGrainDirection', false);
+                                                    form.setValue('backPanelInnerGrainDirection', false);
+                                                  }
+                                                } catch (error) {
+                                                  console.error('Error fetching wood grains preference:', error);
+                                                }
+                                              }
+                                              setCabinetConfigInnerLaminateOpen(false);
+                                            }}
+                                            className="text-sm"
+                                          >
+                                            <Check
+                                              className={`mr-2 h-4 w-4 ${watchedValues.innerLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                }`}
+                                            />
+                                            {code}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Back Panel Plywood</Label>
+                            <Popover open={backPanelPlywoodOpen} onOpenChange={(open) => {
+                              if (open) {
+                                setBackPanelPlywoodOpen(true);
+                              } else {
+                                setTimeout(() => setBackPanelPlywoodOpen(false), 100);
+                              }
+                            }}>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  className="w-full justify-between text-sm h-10"
+                                  data-testid="select-back-panel-plywood-brand"
+                                  ref={(el) => registerFieldRef('backPanelPlywood', el)}
+                                >
+                                  {watchedValues.backPanelPlywoodBrand || 'Select plywood brand'}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[300px] p-0">
+                                <Command>
+                                  <CommandInput placeholder="Type to filter brands..." className="text-sm" />
+                                  <CommandList>
+                                    <CommandEmpty>
+                                      {plywoodBrandMemoryData.length === 0
+                                        ? 'No saved brands. Add brands in Master Settings.'
+                                        : 'No matching brands found.'}
+                                    </CommandEmpty>
+                                    <CommandGroup>
+                                      {plywoodBrandMemoryData.map((brand: PlywoodBrandMemory) => (
+                                        <CommandItem
+                                          key={brand.id}
+                                          value={brand.brand}
+                                          onSelect={(currentValue) => {
+                                            form.setValue('backPanelPlywoodBrand', currentValue);
+                                            setBackPanelPlywoodOpen(false);
+                                            focusNextField('backPanelPlywood');
+                                          }}
+                                        >
+                                          <Check
+                                            className={`mr-2 h-4 w-4 ${watchedValues.backPanelPlywoodBrand === brand.brand ? 'opacity-100' : 'opacity-0'
+                                              }`}
+                                          />
+                                          {brand.brand}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  </CommandList>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
                         </div>
-                      </div>
                       )}
                     </CollapsibleContent>
                   </Collapsible>
 
                   <Form {...form}>
-                    <form onSubmit={form.handleSubmit(addCabinet)} className="space-y-3">
-                    
-                    {/* Advanced Mode - Full Cabinet Configuration */}
-                    {cabinetConfigMode === 'advanced' && (
-                    <>
-                    {/* Front and Inner Laminate - Above Dimensions */}
-                    <div className="grid grid-cols-2 gap-2 mb-3">
-                      {/* Front Laminate */}
-                      <div className="space-y-2">
-                        <Label className="text-xs text-slate-600 font-medium">Front Laminate</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="outline"
-                              role="combobox"
-                              className="w-full justify-between text-sm h-9"
-                            >
-                              {watchedValues.topPanelLaminateCode || 'Select laminate code'}
-                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[300px] p-0">
-                            <Command>
-                              <CommandInput placeholder="Search codes..." className="text-xs" />
-                              <CommandList>
-                                <CommandEmpty>
-                                  {globalLaminateMemory.length === 0 
-                                    ? 'No saved codes. Add codes in Master Settings.'
-                                    : 'No matching codes found.'}
-                                </CommandEmpty>
-                                <CommandGroup>
-                                  {globalLaminateMemory.map((code) => (
-                                    <CommandItem
-                                      key={code}
-                                      value={code}
-                                      onSelect={() => {
-                                        form.setValue('topPanelLaminateCode', code);
-                                      }}
-                                      className="text-xs"
-                                    >
-                                      <Check
-                                        className={`mr-2 h-4 w-4 ${
-                                          watchedValues.topPanelLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                        }`}
-                                      />
-                                      {code}
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </CommandList>
-                            </Command>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
+                    <form onSubmit={form.handleSubmit(addCabinet)} className="space-y-6">
 
-                      {/* Inner Laminate */}
-                      <div className="space-y-2">
-                        <Label className="text-xs text-slate-600 font-medium">Inner Laminate</Label>
-                        <Select 
-                          value={watchedValues.innerLaminateCode || 'off white'}
-                          onValueChange={(value) => {
-                            if (value && value !== '__separator_custom__' && value !== '__separator_live__') {
-                              form.setValue('innerLaminateCode', value);
-                              // ✅ AUTO-SYNC: Copy Inner Laminate to Center Post & Shelves (time saver)
-                              form.setValue('centerPostLaminateCode', value);
-                              form.setValue('centerPostInnerLaminateCode', value);
-                              form.setValue('shelvesLaminateCode', value);
-                              form.setValue('shelvesInnerLaminateCode', value);
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="text-sm h-9">
-                            <SelectValue placeholder="Select inner laminate" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {globalLaminateMemory.length > 0 && (
-                              <>
-                                <SelectItem key="separator-custom-inner" value="__separator_custom_inner__" disabled className="text-xs font-semibold text-slate-600">
-                                  — Previously Typed —
-                                </SelectItem>
-                                {globalLaminateMemory.map((option, idx) => (
-                                  <SelectItem key={`inner-${idx}`} value={option} className="text-xs">
-                                    {option}
-                                  </SelectItem>
-                                ))}
-                              </>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    {/* Dimensions Row - Compact Single Row Layout */}
-                    <div className="flex items-end gap-2 mb-1">
-                      {/* Height */}
-                      <div className="flex-1 min-w-0">
-                        <Label className="text-xs text-slate-600">H</Label>
-                        <Input
-                          type="number"
-                          {...form.register('height', { valueAsNumber: true })}
-                          className="text-sm h-8 px-2"
-                          data-testid="input-cabinet-height"
-                        />
-                      </div>
-                      
-                      {/* Width */}
-                      <div className="flex-1 min-w-0">
-                        <Label className="text-xs text-slate-600">W</Label>
-                        <Input
-                          type="number"
-                          {...form.register('width', { valueAsNumber: true })}
-                          className="text-sm h-8 px-2"
-                        />
-                      </div>
-                      
-                      {/* Reduction */}
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-slate-500">-</span>
-                        <Input
-                          type="number"
-                          {...form.register('widthReduction', { valueAsNumber: true })}
-                          className="w-10 h-8 text-xs text-center px-1"
-                          min="0"
-                          placeholder="36"
-                        />
-                      </div>
-                      
-                      {/* Depth */}
-                      <div className="flex-1 min-w-0">
-                        <Label className="text-xs text-slate-600">D</Label>
-                        <Input
-                          type="number"
-                          {...form.register('depth', { valueAsNumber: true })}
-                          className="text-sm h-8 px-2"
-                        />
-                      </div>
-                      
-                      {/* Unit indicator */}
-                      <span className="text-xs text-slate-400 pb-2">{units}</span>
-                    </div>
-                    
-                    {/* Panel Width Info - Compact */}
-                    <div className="text-xs text-slate-500 mb-2">
-                      Panel W: {((watchedValues.width ?? 0) - (watchedValues.widthReduction ?? 36))}{units}
-                    </div>
-
-                    <div className="space-y-3 mt-3">
-                      {/* Center Post and Shelves */}
-                    <div ref={centerPostSectionRef} className="space-y-2">
-                      <Label className="text-sm font-medium text-slate-700 flex items-center">
-                        <i className="fas fa-columns mr-2 text-blue-600"></i>
-                        Center Post and Shelves
-                      </Label>
-                      
-                      {/* Toggle Row */}
-                      <div className="flex gap-2 items-stretch">
-                      {/* Center Post Toggle */}
-                      <div className="flex-1 p-2 border border-blue-400/30 rounded-lg bg-blue-50/50">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium text-slate-700">Center Post</h4>
-                          <Switch
-                            checked={watchedValues.centerPostEnabled}
-                            disabled={!woodGrainsReady}
-                            onCheckedChange={(checked: boolean) => {
-                              form.setValue('centerPostEnabled', checked);
-                              // Apply to all existing cabinets
-                              if (cabinets.length > 0) {
-                                setCabinets(prevCabinets => 
-                                  prevCabinets.map(cabinet => ({
-                                    ...cabinet,
-                                    centerPostEnabled: checked
-                                  }))
-                                );
-                              }
-                            }}
-                            className="scale-75"
-                          />
-                        </div>
-                        {watchedValues.centerPostEnabled && (
-                          <div className="space-y-2 mt-2">
+                      {/* Advanced Mode - Full Cabinet Configuration */}
+                      {cabinetConfigMode === 'advanced' && (
+                        <>
+                          {/* Front and Inner Laminate - Above Dimensions */}
+                          <div className="grid grid-cols-2 gap-4 mb-6">
+                            {/* Front Laminate */}
                             <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Center Post Qty</Label>
+                              <Label className="text-xs text-slate-600 font-medium">Front Laminate</Label>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    role="combobox"
+                                    className="w-full justify-between text-sm h-9"
+                                  >
+                                    {watchedValues.topPanelLaminateCode || 'Select laminate code'}
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-[300px] p-0">
+                                  <Command>
+                                    <CommandInput placeholder="Search codes..." className="text-xs" />
+                                    <CommandList>
+                                      <CommandEmpty>
+                                        {globalLaminateMemory.length === 0
+                                          ? 'No saved codes. Add codes in Master Settings.'
+                                          : 'No matching codes found.'}
+                                      </CommandEmpty>
+                                      <CommandGroup>
+                                        {globalLaminateMemory.map((code) => (
+                                          <CommandItem
+                                            key={code}
+                                            value={code}
+                                            onSelect={() => {
+                                              form.setValue('topPanelLaminateCode', code);
+                                            }}
+                                            className="text-xs"
+                                          >
+                                            <Check
+                                              className={`mr-2 h-4 w-4 ${watchedValues.topPanelLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                }`}
+                                            />
+                                            {code}
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </CommandList>
+                                  </Command>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+
+                            {/* Inner Laminate */}
+                            <div className="space-y-2">
+                              <Label className="text-xs text-slate-600 font-medium">Inner Laminate</Label>
                               <Select
-                                value={watchedValues.centerPostQuantity?.toString() || '1'}
-                                onValueChange={(value) => form.setValue('centerPostQuantity', parseInt(value))}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="1">1</SelectItem>
-                                  <SelectItem value="2">2</SelectItem>
-                                  <SelectItem value="3">3</SelectItem>
-                                  <SelectItem value="4">4</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Height</Label>
-                              <div className="relative">
-                                <Input
-                                  type="number"
-                                  {...form.register('centerPostHeight', { valueAsNumber: true })}
-                                  className="text-sm pr-8"
-                                  placeholder="Height"
-                                />
-                                <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Depth</Label>
-                              <div className="relative">
-                                <Input
-                                  type="number"
-                                  {...form.register('centerPostDepth', { valueAsNumber: true })}
-                                  className="text-sm pr-8"
-                                  placeholder="Depth"
-                                />
-                                <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Front Laminate</Label>
-                              <Select
-                                value={watchedValues.centerPostLaminateCode || watchedValues.topPanelLaminateCode || ''}
-                                onValueChange={(value) => form.setValue('centerPostLaminateCode', value)}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select laminate" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {laminateCodeGodownData.map((laminate: LaminateCode) => (
-                                    <SelectItem key={laminate.id} value={laminate.code}>
-                                      {laminate.code}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
-                              <Select
-                                value={watchedValues.centerPostInnerLaminateCode || watchedValues.innerLaminateCode || ''}
-                                onValueChange={(value) => form.setValue('centerPostInnerLaminateCode', value)}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select laminate" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {laminateCodeGodownData.map((laminate: LaminateCode) => (
-                                    <SelectItem key={laminate.id} value={laminate.code}>
-                                      {laminate.code}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                form.setValue('centerPostHeight', watchedValues.height - 36);
-                                form.setValue('centerPostDepth', watchedValues.depth - 20);
-                              }}
-                              className="h-8 px-3 text-xs w-full"
-                            >
-                              Reset Dimensions
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* Shelves Toggle */}
-                      <div className="flex-1 p-2 border border-blue-400/30 rounded-lg bg-blue-50/50">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium text-slate-700">Shelves</h4>
-                          <Switch
-                            checked={watchedValues.shelvesEnabled}
-                            disabled={!woodGrainsReady}
-                            onCheckedChange={(checked: boolean) => {
-                              form.setValue('shelvesEnabled', checked);
-                              // Apply to all existing cabinets
-                              if (cabinets.length > 0) {
-                                setCabinets(prevCabinets => 
-                                  prevCabinets.map(cabinet => ({
-                                    ...cabinet,
-                                    shelvesEnabled: checked
-                                  }))
-                                );
-                              }
-                            }}
-                            className="scale-75"
-                          />
-                        </div>
-                        {watchedValues.shelvesEnabled && (
-                          <div className="space-y-2 mt-2">
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Shelves Qty</Label>
-                              <Select
-                                value={watchedValues.shelvesQuantity?.toString() || "1"}
+                                value={watchedValues.innerLaminateCode || 'off white'}
                                 onValueChange={(value) => {
-                                  form.setValue('shelvesQuantity', parseInt(value));
+                                  if (value && value !== '__separator_custom__' && value !== '__separator_live__') {
+                                    form.setValue('innerLaminateCode', value);
+                                  }
                                 }}
                               >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select" />
+                                <SelectTrigger className="text-sm h-9">
+                                  <SelectValue placeholder="Select inner laminate" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="1">1</SelectItem>
-                                  <SelectItem value="2">2</SelectItem>
-                                  <SelectItem value="3">3</SelectItem>
-                                  <SelectItem value="4">4</SelectItem>
-                                  <SelectItem value="5">5</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Shelves Width</Label>
-                              <div className="relative">
-                                <Input
-                                  type="number"
-                                  value={watchedValues.width || 0}
-                                  placeholder="Width"
-                                  className="text-sm pr-8"
-                                  onChange={(e) => form.setValue('width', parseInt(e.target.value) || 0)}
-                                />
-                                <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
-                              </div>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Shelves Depth</Label>
-                              <div className="relative">
-                                <Input
-                                  type="number"
-                                  value={watchedValues.depth ? watchedValues.depth - 30 : ''}
-                                  placeholder="Depth"
-                                  className="text-sm pr-8"
-                                  onChange={(e) => form.setValue('depth', parseInt(e.target.value) || 0)}
-                                />
-                                <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Front Laminate</Label>
-                              <Select
-                                value={watchedValues.shelvesLaminateCode || watchedValues.topPanelLaminateCode || ''}
-                                onValueChange={(value) => form.setValue('shelvesLaminateCode', value)}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select laminate" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {laminateCodeGodownData.map((laminate: LaminateCode) => (
-                                    <SelectItem key={laminate.id} value={laminate.code}>
-                                      {laminate.code}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
-                              <Select
-                                value={watchedValues.shelvesInnerLaminateCode || watchedValues.innerLaminateCode || ''}
-                                onValueChange={(value) => form.setValue('shelvesInnerLaminateCode', value)}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select laminate" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {laminateCodeGodownData.map((laminate: LaminateCode) => (
-                                    <SelectItem key={laminate.id} value={laminate.code}>
-                                      {laminate.code}
-                                    </SelectItem>
-                                  ))}
+                                  {globalLaminateMemory.length > 0 && (
+                                    <>
+                                      <SelectItem key="separator-custom-inner" value="__separator_custom_inner__" disabled className="text-xs font-semibold text-slate-600">
+                                        — Previously Typed —
+                                      </SelectItem>
+                                      {globalLaminateMemory.map((option, idx) => (
+                                        <SelectItem key={`inner-${idx}`} value={option} className="text-xs">
+                                          {option}
+                                        </SelectItem>
+                                      ))}
+                                    </>
+                                  )}
                                 </SelectContent>
                               </Select>
                             </div>
                           </div>
-                        )}
-                      </div>
-                      </div>
-                    </div>
 
-                    {/* Shutter Configuration - Highlighted section with border and shadow */}
-                      <div ref={shutterConfigSectionRef} className={`space-y-2 rounded-lg p-3 ${watchedValues.shuttersEnabled ? 'bg-blue-50' : ''}`}>
-                        {/* Heading with Include Shutters toggle on right */}
-                        <div className="flex items-center justify-between">
-                          <Label className="text-base font-semibold text-slate-800 flex items-center">
-                            <i className="fas fa-door-open mr-2 text-orange-600"></i>
-                            Shutter Configuration
-                          </Label>
-                          <div className="flex items-center space-x-2">
-                            <Label className="text-xs text-slate-600">Include Shutters</Label>
-                            <Switch
-                              checked={watchedValues.shuttersEnabled}
-                              onCheckedChange={(checked: boolean) => {
-                                form.setValue('shuttersEnabled', checked);
-                                if (checked) {
-                                  updateShutters();
-                                }
-                                // Apply to all existing cabinets and regenerate their shutter data
-                                if (cabinets.length > 0) {
-                                  setCabinets(prevCabinets => 
-                                    prevCabinets.map(cabinet => {
-                                      const updatedCabinet = {
-                                        ...cabinet,
-                                        shuttersEnabled: checked
-                                      };
-                                      // Regenerate shutters array if enabling, clear if disabling
-                                      return {
-                                        ...updatedCabinet,
-                                        shutters: checked ? calculateShutterDimensions(updatedCabinet) : []
-                                      };
-                                    })
-                                  );
-                                }
-                              }}
-                              className="scale-90"
-                            />
+                          {/* Dimensions Row - Responsive Grid Layout */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                            {/* Height */}
+                            <div className="space-y-1">
+                              <Label className="text-sm">Height</Label>
+                              <div className="relative">
+                                <Input
+                                  type="number"
+                                  {...form.register('height', { valueAsNumber: true })}
+                                  className="text-sm w-full"
+                                  data-testid="input-cabinet-height"
+                                />
+                                <span className="absolute right-2 top-2 text-xs text-slate-500">{units}</span>
+                              </div>
+                            </div>
+
+                            {/* Width with Reduction */}
+                            <div className="space-y-1">
+                              <Label className="text-sm">Width</Label>
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1">
+                                  <Input
+                                    type="number"
+                                    {...form.register('width', { valueAsNumber: true })}
+                                    className="text-sm"
+                                  />
+                                  <span className="absolute right-2 top-2 text-xs text-slate-500">{units}</span>
+                                </div>
+                                <span className="text-xs text-slate-600 whitespace-nowrap">-</span>
+                                <Input
+                                  type="number"
+                                  {...form.register('widthReduction', { valueAsNumber: true })}
+                                  className="w-16 h-9 text-xs text-center"
+                                  min="0"
+                                  placeholder="36"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Depth */}
+                            <div className="space-y-1">
+                              <Label className="text-sm">Depth</Label>
+                              <div className="relative">
+                                <Input
+                                  type="number"
+                                  {...form.register('depth', { valueAsNumber: true })}
+                                  className="text-sm w-full"
+                                />
+                                <span className="absolute right-2 top-2 text-xs text-slate-500">{units}</span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
 
-                        {watchedValues.shuttersEnabled && (
-                          <div className="overflow-hidden">
-                            {/* Shutter Controls */}
-                          <div className="space-y-2">
-                            
-                            {/* Shutter Plywood and Qty in one row */}
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="col-span-2">
-                                <Label className="text-xs text-slate-600 font-medium">Shutter Plywood</Label>
+                          {/* Panel Width Info */}
+                          <div className="text-xs text-slate-500 mb-4">
+                            Panel width: {watchedValues.width ? (watchedValues.width - (watchedValues.widthReduction || 36)) : 0}mm
+                          </div>
+
+                          <div className="space-y-6 mt-[50px]">
+                            {/* Center Post and Shelves */}
+                            <div ref={centerPostSectionRef} className="space-y-2 mt-[50px]">
+                              <Label className="text-sm font-medium text-slate-700 flex items-center">
+                                <i className="fas fa-columns mr-2 text-blue-600"></i>
+                                Center Post and Shelves
+                              </Label>
+
+                              {/* Toggle Row */}
+                              <div className="flex gap-4 items-stretch">
+                                {/* Center Post Toggle */}
+                                <div className="flex-1 p-3 border border-blue-400/30 rounded-lg bg-blue-50/50">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-medium text-slate-700">Center Post</h4>
+                                    <Switch
+                                      checked={watchedValues.centerPostEnabled}
+                                      disabled={!woodGrainsReady}
+                                      onCheckedChange={(checked: boolean) => {
+                                        form.setValue('centerPostEnabled', checked);
+                                        // Apply to all existing cabinets
+                                        if (cabinets.length > 0) {
+                                          setCabinets(prevCabinets =>
+                                            prevCabinets.map(cabinet => ({
+                                              ...cabinet,
+                                              centerPostEnabled: checked
+                                            }))
+                                          );
+                                        }
+                                      }}
+                                      className="scale-75"
+                                    />
+                                  </div>
+                                  {watchedValues.centerPostEnabled && (
+                                    <div className="space-y-3">
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-slate-600">Center Post Qty</Label>
+                                          <Select
+                                            value={watchedValues.centerPostQuantity?.toString() || '1'}
+                                            onValueChange={(value) => form.setValue('centerPostQuantity', parseInt(value))}
+                                          >
+                                            <SelectTrigger className="h-8 text-sm">
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="1">1</SelectItem>
+                                              <SelectItem value="2">2</SelectItem>
+                                              <SelectItem value="3">3</SelectItem>
+                                              <SelectItem value="4">4</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-slate-600">Height</Label>
+                                          <div className="relative">
+                                            <Input
+                                              type="number"
+                                              {...form.register('centerPostHeight', { valueAsNumber: true })}
+                                              className="text-sm pr-8"
+                                              placeholder="Height"
+                                            />
+                                            <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
+                                          </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-slate-600">Depth</Label>
+                                          <div className="relative">
+                                            <Input
+                                              type="number"
+                                              {...form.register('centerPostDepth', { valueAsNumber: true })}
+                                              className="text-sm pr-8"
+                                              placeholder="Depth"
+                                            />
+                                            <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
+                                          </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-slate-600 invisible">Reset</Label>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => {
+                                              form.setValue('centerPostHeight', watchedValues.height - 36);
+                                              form.setValue('centerPostDepth', watchedValues.depth - 20);
+                                            }}
+                                            className="h-8 px-3 text-xs w-full"
+                                          >
+                                            Reset
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Shelves Toggle */}
+                                <div className="flex-1 p-3 border border-blue-400/30 rounded-lg bg-blue-50/50">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="text-sm font-medium text-slate-700">Shelves</h4>
+                                    <Switch
+                                      checked={watchedValues.shelvesEnabled}
+                                      disabled={!woodGrainsReady}
+                                      onCheckedChange={(checked: boolean) => {
+                                        form.setValue('shelvesEnabled', checked);
+                                        // Apply to all existing cabinets
+                                        if (cabinets.length > 0) {
+                                          setCabinets(prevCabinets =>
+                                            prevCabinets.map(cabinet => ({
+                                              ...cabinet,
+                                              shelvesEnabled: checked
+                                            }))
+                                          );
+                                        }
+                                      }}
+                                      className="scale-75"
+                                    />
+                                  </div>
+                                  {watchedValues.shelvesEnabled && (
+                                    <div className="space-y-3">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-slate-600">Shelves Qty</Label>
+                                          <Select
+                                            value={watchedValues.shelvesQuantity?.toString() || "1"}
+                                            onValueChange={(value) => {
+                                              form.setValue('shelvesQuantity', parseInt(value));
+                                            }}
+                                          >
+                                            <SelectTrigger className="h-8 text-sm">
+                                              <SelectValue placeholder="Select" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="1">1</SelectItem>
+                                              <SelectItem value="2">2</SelectItem>
+                                              <SelectItem value="3">3</SelectItem>
+                                              <SelectItem value="4">4</SelectItem>
+                                              <SelectItem value="5">5</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-slate-600">Shelves Width</Label>
+                                          <div className="relative">
+                                            <Input
+                                              type="number"
+                                              value={(() => {
+                                                const width = (watchedValues.width || 0) - (watchedValues.widthReduction || 36);
+                                                if (width && watchedValues.centerPostEnabled) {
+                                                  return width - (watchedValues.centerPostQuantity || 1) * 18;
+                                                }
+                                                return width || '';
+                                              })()}
+                                              placeholder="Width"
+                                              className="text-sm pr-8"
+                                              onChange={(e) => form.setValue('width', parseInt(e.target.value) || 0)}
+                                            />
+                                            <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
+                                          </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          <Label className="text-xs text-slate-600">Shelves Depth</Label>
+                                          <div className="relative">
+                                            <Input
+                                              type="number"
+                                              value={watchedValues.depth ? watchedValues.depth - 30 : ''}
+                                              placeholder="Depth"
+                                              className="text-sm pr-8"
+                                              onChange={(e) => form.setValue('depth', parseInt(e.target.value) || 0)}
+                                            />
+                                            <span className="absolute right-2 top-2 text-xs text-slate-500">mm</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Shutter Configuration */}
+                            <div ref={shutterConfigSectionRef} className="space-y-8">
+                              {/* Heading with Include Shutters toggle on right */}
+                              <div className="flex items-center justify-between">
+                                <Label className="text-sm font-medium text-slate-700 flex items-center">
+                                  <i className="fas fa-door-open mr-2 text-orange-600"></i>
+                                  Shutter Configuration
+                                </Label>
+                                <div className="flex items-center space-x-2">
+                                  <Label className="text-xs text-slate-600">Include Shutters</Label>
+                                  <Switch
+                                    checked={watchedValues.shuttersEnabled}
+                                    onCheckedChange={(checked: boolean) => {
+                                      form.setValue('shuttersEnabled', checked);
+                                      if (checked) {
+                                        updateShutters();
+                                      }
+                                      // Apply to all existing cabinets and regenerate their shutter data
+                                      if (cabinets.length > 0) {
+                                        setCabinets(prevCabinets =>
+                                          prevCabinets.map(cabinet => {
+                                            const updatedCabinet = {
+                                              ...cabinet,
+                                              shuttersEnabled: checked
+                                            };
+                                            // Regenerate shutters array if enabling, clear if disabling
+                                            return {
+                                              ...updatedCabinet,
+                                              shutters: checked ? calculateShutterDimensions(updatedCabinet) : []
+                                            };
+                                          })
+                                        );
+                                      }
+                                    }}
+                                    className="scale-90"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* 2 controls in single row */}
+                              <div className="flex flex-wrap items-center gap-3 mb-6">
+                                {/* Plywood Brand Dropdown */}
                                 <Popover open={shutterPlywoodOpen} onOpenChange={(open) => {
                                   if (open) {
                                     setShutterPlywoodOpen(true);
@@ -5519,11 +5381,11 @@ export default function Home() {
                                     <Button
                                       variant="outline"
                                       role="combobox"
-                                      className="w-full justify-between text-sm h-9"
+                                      className="w-[200px] justify-between text-xs h-7"
                                       data-testid="select-shutter-plywood-brand"
                                     >
-                                      {watchedValues.A || 'Select plywood'}
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      {watchedValues.shutterPlywoodBrand || watchedValues.plywoodType || 'Plywood Brand'}
+                                      <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
                                     </Button>
                                   </PopoverTrigger>
                                   <PopoverContent className="w-[300px] p-0">
@@ -5531,7 +5393,7 @@ export default function Home() {
                                       <CommandInput placeholder="Type to filter brands..." className="text-xs" />
                                       <CommandList>
                                         <CommandEmpty>
-                                          {plywoodBrandMemoryData.length === 0 
+                                          {plywoodBrandMemoryData.length === 0
                                             ? 'No saved brands. Add brands in Master Settings.'
                                             : 'No matching brands found.'}
                                         </CommandEmpty>
@@ -5541,14 +5403,12 @@ export default function Home() {
                                               key={brand.id}
                                               value={brand.brand}
                                               onSelect={(currentValue) => {
-                                                form.setValue('A', currentValue);
-                                                setShutterPlywoodOpen(false);
+                                                form.setValue('shutterPlywoodBrand', currentValue);
                                               }}
                                             >
                                               <Check
-                                                className={`mr-2 h-4 w-4 ${
-                                                  watchedValues.A === brand.brand ? 'opacity-100' : 'opacity-0'
-                                                }`}
+                                                className={`mr-2 h-4 w-4 ${watchedValues.shutterPlywoodBrand === brand.brand ? 'opacity-100' : 'opacity-0'
+                                                  }`}
                                               />
                                               {brand.brand}
                                             </CommandItem>
@@ -5558,1340 +5418,1466 @@ export default function Home() {
                                     </Command>
                                   </PopoverContent>
                                 </Popover>
-                              </div>
-                              <div>
-                                <Label className="text-xs text-slate-600 font-medium">Qty</Label>
-                                <Select 
-                                  value={watchedValues.type} 
-                                  onValueChange={(value) => {
-                                    const cabinetType = value as CabinetType;
-                                    form.setValue('type', cabinetType);
-                                    const config = cabinetConfigs[cabinetType];
-                                    if (config) {
-                                      form.setValue('shutterCount', config.shutterQuantity);
-                                      if (watchedValues.shuttersEnabled) {
-                                        const newShutters = calculateShutterDimensions({
-                                          ...watchedValues,
-                                          type: cabinetType,
-                                          shutterCount: config.shutterQuantity
-                                        });
-                                        form.setValue('shutters', newShutters);
+
+                                {/* No of Shutter Dropdown */}
+                                <div className="flex items-center space-x-2">
+                                  <Label className="text-xs text-slate-600">No of Shutter</Label>
+                                  <Select
+                                    value={watchedValues.type}
+                                    onValueChange={(value) => {
+                                      const cabinetType = value as CabinetType;
+                                      form.setValue('type', cabinetType);
+
+                                      // Update shutter count based on cabinet type
+                                      const config = cabinetConfigs[cabinetType];
+                                      if (config) {
+                                        form.setValue('shutterCount', config.shutterQuantity);
+
+                                        // Update shutters if enabled
+                                        if (watchedValues.shuttersEnabled) {
+                                          const newShutters = calculateShutterDimensions({
+                                            ...watchedValues,
+                                            type: cabinetType,
+                                            shutterCount: config.shutterQuantity
+                                          });
+                                          form.setValue('shutters', newShutters);
+                                        }
                                       }
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="text-sm h-9">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {cabinetTypes.map(type => (
-                                      <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                    }}
+                                  >
+                                    <SelectTrigger className="text-xs h-7 w-20">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {cabinetTypes.map(type => (
+                                        <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
                               </div>
-                            </div>
-                            
-                            {/* Front and Inner Laminate */}
-                            <div className="grid grid-cols-2 gap-2">
-                              {/* Front Laminate */}
-                              <div className="space-y-1">
-                                <Label className="text-xs text-slate-600 font-medium">Front Laminate</Label>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className="w-full justify-between text-sm h-9"
-                                    >
-                                      {watchedValues.shutterLaminateCode || 'Select laminate code'}
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[300px] p-0">
-                                    <Command>
-                                      <CommandInput placeholder="Search codes..." className="text-xs" />
-                                      <CommandList>
-                                        <CommandEmpty>
-                                          {globalLaminateMemory.length === 0 
-                                            ? 'No saved codes. Add codes in Master Settings.'
-                                            : 'No matching codes found.'}
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {globalLaminateMemory.map((code) => (
-                                            <CommandItem
-                                              key={code}
-                                              value={code}
-                                              onSelect={() => {
-                                                form.setValue('shutterLaminateCode', code);
-                                              }}
-                                              className="text-xs"
+
+                              {watchedValues.shuttersEnabled && (
+                                <div>
+                                  {/* Shutter Controls */}
+                                  <div className="space-y-8">
+
+                                    {/* Front and Inner Laminate - Outside individual shutter cards */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                      {/* Front Laminate */}
+                                      <div className="space-y-2">
+                                        <Label className="text-xs text-slate-600 font-medium">Front Laminate</Label>
+                                        <Popover>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className="w-full justify-between text-sm h-9"
                                             >
-                                              <Check
-                                                className={`mr-2 h-4 w-4 ${
-                                                  watchedValues.shutterLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                                }`}
-                                              />
-                                              {code}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
+                                              {watchedValues.shutterLaminateCode || 'Select laminate code'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Search codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={() => {
+                                                        form.setValue('shutterLaminateCode', code);
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${watchedValues.shutterLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
 
-                              {/* Inner Laminate */}
-                              <div className="space-y-1">
-                                <Label className="text-xs text-slate-600 font-medium">Inner Laminate</Label>
-                                <Select 
-                                  value={watchedValues.shutterInnerLaminateCode || 'off white'}
-                                  onValueChange={(value) => {
-                                    if (value && value !== '__separator_custom__' && value !== '__separator_live__') {
-                                      form.setValue('shutterInnerLaminateCode', value);
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger className="text-sm h-9">
-                                    <SelectValue placeholder="Select inner laminate" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {globalLaminateMemory.length > 0 && (
-                                      <>
-                                        <SelectItem key="separator-custom-inner-shutter" value="__separator_custom_inner_shutter__" disabled className="text-xs font-semibold text-slate-600">
-                                          — Previously Typed —
-                                        </SelectItem>
-                                        {globalLaminateMemory.map((option, idx) => (
-                                          <SelectItem key={`inner-${idx}`} value={option} className="text-xs">
-                                            {option}
-                                          </SelectItem>
-                                        ))}
-                                      </>
+                                      {/* Inner Laminate */}
+                                      <div className="space-y-2">
+                                        <Label className="text-xs text-slate-600 font-medium">Inner Laminate</Label>
+                                        <Select
+                                          value={watchedValues.shutterInnerLaminateCode || 'off white'}
+                                          onValueChange={(value) => {
+                                            if (value && value !== '__separator_custom__' && value !== '__separator_live__') {
+                                              form.setValue('shutterInnerLaminateCode', value);
+                                            }
+                                          }}
+                                        >
+                                          <SelectTrigger className="text-sm h-9">
+                                            <SelectValue placeholder="Select inner laminate" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {globalLaminateMemory.length > 0 && (
+                                              <>
+                                                <SelectItem key="separator-custom-inner-shutter" value="__separator_custom_inner_shutter__" disabled className="text-xs font-semibold text-slate-600">
+                                                  — Previously Typed —
+                                                </SelectItem>
+                                                {globalLaminateMemory.map((option, idx) => (
+                                                  <SelectItem key={`inner-${idx}`} value={option} className="text-xs">
+                                                    {option}
+                                                  </SelectItem>
+                                                ))}
+                                              </>
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
+
+                                    {/* Custom Shutter Dimensions */}
+                                    {watchedValues.shutters && watchedValues.shutters.length > 0 && (
+                                      <div className="p-8 bg-gray-50 rounded-lg border">
+
+                                        <div className="text-sm font-medium text-slate-700 mb-6 flex items-center justify-between">
+                                          <span>Custom Shutter Sizes:</span>
+                                          <div className="flex space-x-2">
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => {
+                                                const currentShutters = watchedValues.shutters || [];
+                                                const shutter1LaminateCode = currentShutters.length > 0 ? currentShutters[0].laminateCode : '';
+                                                const newShutter = {
+                                                  width: Math.round((watchedValues.width || 600) / (watchedValues.shutterCount + 1)),
+                                                  height: watchedValues.height || 800,
+                                                  laminateCode: shutter1LaminateCode
+                                                };
+                                                form.setValue('shutters', [...currentShutters, newShutter]);
+                                                form.setValue('shutterCount', currentShutters.length + 1);
+                                              }}
+                                              className="text-xs text-green-600 hover:text-green-800 h-6 px-2"
+                                            >
+                                              <i className="fas fa-plus mr-1"></i>
+                                              Add Size
+                                            </Button>
+                                            <Button
+                                              type="button"
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => {
+                                                const newShutters = calculateShutterDimensions(watchedValues);
+                                                form.setValue('shutters', newShutters);
+                                              }}
+                                              className="text-xs text-blue-600 hover:text-blue-800 h-6 px-2"
+                                            >
+                                              <i className="fas fa-refresh mr-1"></i>
+                                              Reset
+                                            </Button>
+                                          </div>
+                                        </div>
+                                        <div className="space-y-6">
+                                          {watchedValues.shutters.map((shutter, index) => (
+                                            <div key={index} className="p-6 bg-white rounded-lg border">
+                                              <div className="flex items-center justify-between mb-2">
+                                                <Label className="text-sm font-medium text-slate-700">Shutter {index + 1}:</Label>
+                                                <Button
+                                                  type="button"
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() => {
+                                                    const newShutters = watchedValues.shutters.filter((_, i) => i !== index);
+                                                    form.setValue('shutters', newShutters);
+                                                    form.setValue('shutterCount', newShutters.length);
+                                                  }}
+                                                  className="text-xs text-red-600 hover:text-red-800 h-6 w-6 p-0"
+                                                >
+                                                  <i className="fas fa-times"></i>
+                                                </Button>
+                                              </div>
+                                              {/* Height (mm) */}
+                                              <div className="space-y-1">
+                                                <Label className="text-xs text-slate-500">Height (mm)</Label>
+                                                <Input
+                                                  ref={index === 0 ? shutterHeightInputRef : null}
+                                                  type="number"
+                                                  value={shutter.height === 0 ? '' : shutter.height}
+                                                  onChange={(e) => {
+                                                    const newShutters = [...watchedValues.shutters];
+                                                    const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                                    newShutters[index] = { ...newShutters[index], height: newValue };
+                                                    form.setValue('shutters', newShutters);
+                                                  }}
+                                                  className="text-sm h-9 w-full font-mono"
+                                                  placeholder={watchedValues.height?.toString() || "800"}
+                                                  min="0"
+                                                  max="9999"
+                                                  data-testid="input-shutter-height"
+                                                />
+                                              </div>
+
+                                              {/* Remaining fields grid */}
+                                              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+                                                <div className="space-y-1">
+                                                  <Label className="text-xs text-slate-500">Height Reduction</Label>
+                                                  <Input
+                                                    type="number"
+                                                    value={watchedValues.shutterHeightReduction?.toString() || '0'}
+                                                    onChange={(e) => {
+                                                      const reductionValue = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                                      form.setValue('shutterHeightReduction', reductionValue);
+
+                                                      // Auto-update shutter heights: Cabinet Height + Reduction Value
+                                                      const cabinetHeight = watchedValues.height || 800;
+                                                      const newHeight = cabinetHeight + reductionValue;
+
+                                                      // Update all shutters with the new height
+                                                      const newShutters = watchedValues.shutters.map(shutter => ({
+                                                        ...shutter,
+                                                        height: newHeight
+                                                      }));
+                                                      form.setValue('shutters', newShutters);
+                                                    }}
+                                                    className="text-sm h-9 w-full font-mono"
+                                                    placeholder="0"
+                                                  />
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <Label className="text-xs text-slate-500">Width (mm)</Label>
+                                                  <Input
+                                                    type="number"
+                                                    value={shutter.width === 0 ? '' : shutter.width}
+                                                    onChange={(e) => {
+                                                      const newShutters = [...watchedValues.shutters];
+                                                      const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                                      newShutters[index] = { ...newShutters[index], width: newValue };
+                                                      form.setValue('shutters', newShutters);
+                                                    }}
+                                                    className="text-sm h-9 w-full font-mono"
+                                                    placeholder={Math.round((watchedValues.width || 600) / watchedValues.shutterCount).toString()}
+                                                    min="0"
+                                                    max="9999"
+                                                  />
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <Label className="text-xs text-slate-500">Width Reduction</Label>
+                                                  <Input
+                                                    type="number"
+                                                    value={watchedValues.shutterWidthReduction?.toString() || '0'}
+                                                    onChange={(e) => {
+                                                      const reductionValue = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                                      form.setValue('shutterWidthReduction', reductionValue);
+
+                                                      // Auto-update shutter widths: (Cabinet Width / Shutter Count) + Reduction Value
+                                                      const cabinetWidth = watchedValues.width || 600;
+                                                      const shutterCount = watchedValues.shutterCount || 1;
+                                                      const baseWidth = Math.round(cabinetWidth / shutterCount);
+                                                      const newWidth = baseWidth + reductionValue;
+
+                                                      // Update all shutters with the new width
+                                                      const newShutters = watchedValues.shutters.map(shutter => ({
+                                                        ...shutter,
+                                                        width: newWidth
+                                                      }));
+                                                      form.setValue('shutters', newShutters);
+                                                    }}
+                                                    className="text-sm h-9 w-full font-mono"
+                                                    placeholder="0"
+                                                  />
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <Label className="text-xs text-slate-500">Count</Label>
+                                                  <div className="flex items-center space-x-1">
+                                                    <Button
+                                                      type="button"
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => {
+                                                        const currentCount = watchedValues.shutterCount;
+                                                        if (currentCount > 0) {
+                                                          form.setValue('shutterCount', currentCount - 1);
+                                                          const newShutters = watchedValues.shutters.slice(0, -1);
+                                                          form.setValue('shutters', newShutters);
+                                                        }
+                                                      }}
+                                                      disabled={watchedValues.shutterCount <= 0}
+                                                      className="h-9 w-7 p-0"
+                                                    >
+                                                      <i className="fas fa-minus text-xs"></i>
+                                                    </Button>
+
+                                                    <span className="text-xs font-medium min-w-[15px] text-center">
+                                                      {watchedValues.shutterCount}
+                                                    </span>
+
+                                                    <Button
+                                                      type="button"
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => {
+                                                        const currentCount = watchedValues.shutterCount;
+                                                        if (currentCount < 5) {
+                                                          form.setValue('shutterCount', currentCount + 1);
+                                                          const newShutters = calculateShutterDimensions({
+                                                            ...watchedValues,
+                                                            shutterCount: currentCount + 1
+                                                          });
+                                                          form.setValue('shutters', newShutters);
+                                                        }
+                                                      }}
+                                                      disabled={watchedValues.shutterCount >= 5}
+                                                      className="h-9 w-7 p-0"
+                                                    >
+                                                      <i className="fas fa-plus text-xs"></i>
+                                                    </Button>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
                                     )}
-                                  </SelectContent>
-                                </Select>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Panel Laminate Selection */}
+                          <Collapsible open={individualPanelsOpen} onOpenChange={setIndividualPanelsOpen} className="mb-6">
+                            <CollapsibleTrigger asChild>
+                              <Button
+                                ref={individualPanelsRef}
+                                variant="outline"
+                                className="w-full justify-between text-sm font-medium"
+                                type="button"
+                              >
+                                <span className="flex items-center">
+                                  <i className="fas fa-th-large mr-2 text-primary-600"></i>
+                                  Individual Panel Laminate Selection
+                                </span>
+                                <i className={`fas ${individualPanelsOpen ? 'fa-chevron-down' : 'fa-chevron-right'} text-gray-400`}></i>
+                              </Button>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-2 space-y-2 border-l-2 border-primary-200 pl-4">
+                              <div className="flex items-center justify-end mb-2">
+                                <div className="flex items-center space-x-4">
+                                  <div className="flex items-center space-x-2">
+                                    <Label htmlFor="panels-link" className="text-xs text-slate-600">
+                                      {panelsLinked ? 'Linked' : 'Unlinked'}
+                                    </Label>
+                                    <Switch
+                                      id="panels-link"
+                                      checked={panelsLinked}
+                                      onCheckedChange={setPanelsLinked}
+                                      data-testid="switch-panels-link"
+                                    />
+                                    <i className={`fas ${panelsLinked ? 'fa-link text-blue-600' : 'fa-unlink text-gray-600'} text-sm`}></i>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <Label htmlFor="master-gaddi" className="text-xs text-slate-600">
+                                      Gaddi
+                                    </Label>
+                                    <Switch
+                                      id="master-gaddi"
+                                      checked={allGaddiEnabled}
+                                      onCheckedChange={toggleAllGaddi}
+                                      data-testid="switch-master-gaddi"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                {/* Top Panel */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-3">
+                                    <Label className="text-xs sm:text-sm text-slate-600">
+                                      Top Panel ({(watchedValues.width || 0) - (watchedValues.widthReduction || 36)}mm × {watchedValues.depth || 0}mm)
+                                    </Label>
+                                    <div className="flex items-center gap-2">
+                                      <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
+                                      <Switch
+                                        checked={topGaddiEnabled}
+                                        onCheckedChange={setTopGaddiEnabled}
+                                        className="scale-100"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="flex gap-4">
+                                    <div className="space-y-1 flex-1">
+                                      <Label className="text-xs text-slate-600">Front Laminate</Label>
+                                      <Popover open={topLaminateOpen} onOpenChange={setTopLaminateOpen}>
+                                        <PopoverTrigger asChild>
+                                          <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.topPanelGrainDirection && (laminateSelection || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
+                                            ref={(el) => registerFieldRef('topPanelLaminateCode', el)}
+                                          >
+                                            {laminateSelection || 'Select front laminate'}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[300px] p-0">
+                                          <Command>
+                                            <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                            <CommandList>
+                                              <CommandEmpty>
+                                                {globalLaminateMemory.length === 0
+                                                  ? 'No saved codes. Add codes in Master Settings.'
+                                                  : 'No matching codes found.'}
+                                              </CommandEmpty>
+                                              <CommandGroup>
+                                                {globalLaminateMemory.map((code) => (
+                                                  <CommandItem
+                                                    key={code}
+                                                    value={code}
+                                                    onSelect={async (currentValue) => {
+                                                      setLaminateSelection(currentValue);
+                                                      updateLaminateWithTracking('topPanelLaminateCode', currentValue, 'user');
+                                                      // Auto-mark paired Inner Laminate as user-selected (it has a sensible default)
+                                                      markLaminateAsUserSelected('topPanelInnerLaminateCode');
+
+                                                      // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
+                                                      const topBaseCode = currentValue.split('+')[0].trim();
+                                                      const topHasWoodGrain = woodGrainsPreferences[topBaseCode] === true;
+                                                      form.setValue('topPanelGrainDirection', topHasWoodGrain);
+
+                                                      if (panelsLinked) {
+                                                        syncLaminateCode(currentValue, 'top');
+                                                      }
+                                                      setTopLaminateOpen(false);
+                                                      focusNextField('topPanelLaminateCode');
+                                                    }}
+                                                    className="text-xs"
+                                                  >
+                                                    <Check
+                                                      className={`mr-2 h-4 w-4 ${laminateSelection === code ? 'opacity-100' : 'opacity-0'
+                                                        }`}
+                                                    />
+                                                    {code}
+                                                  </CommandItem>
+                                                ))}
+                                              </CommandGroup>
+                                            </CommandList>
+                                          </Command>
+                                        </PopoverContent>
+                                      </Popover>
+                                    </div>
+
+                                    <div className="space-y-1 flex-1">
+                                      <Label className="text-xs text-slate-600">Inner Laminate</Label>
+                                      <Popover open={topInnerLaminateOpen} onOpenChange={setTopInnerLaminateOpen}>
+                                        <PopoverTrigger asChild>
+                                          <Button
+                                            variant="outline"
+                                            role="combobox"
+                                            className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
+                                          >
+                                            {watchedValues.topPanelInnerLaminateCode || 'Select inner laminate'}
+                                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[300px] p-0">
+                                          <Command>
+                                            <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                            <CommandList>
+                                              <CommandEmpty>
+                                                {globalLaminateMemory.length === 0
+                                                  ? 'No saved codes. Add codes in Master Settings.'
+                                                  : 'No matching codes found.'}
+                                              </CommandEmpty>
+                                              <CommandGroup>
+                                                {globalLaminateMemory.map((code) => (
+                                                  <CommandItem
+                                                    key={code}
+                                                    value={code}
+                                                    onSelect={(currentValue) => {
+                                                      updateLaminateWithTracking('topPanelInnerLaminateCode', currentValue, 'user');
+                                                      if (panelsLinked) {
+                                                        syncCabinetConfigInnerLaminate(currentValue, true);
+                                                      }
+                                                      setTopInnerLaminateOpen(false);
+                                                    }}
+                                                    className="text-xs"
+                                                  >
+                                                    <Check
+                                                      className={`mr-2 h-4 w-4 ${watchedValues.topPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                        }`}
+                                                    />
+                                                    {code}
+                                                  </CommandItem>
+                                                ))}
+                                              </CommandGroup>
+                                            </CommandList>
+                                          </Command>
+                                        </PopoverContent>
+                                      </Popover>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Other Panels Grid */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+
+                                  {/* Bottom Panel */}
+                                  <div className="space-y-1 w-full">
+                                    <div className="flex items-center gap-3">
+                                      <Label className="text-xs sm:text-sm text-slate-600">
+                                        Bottom Panel ({(watchedValues.width || 0) - (watchedValues.widthReduction || 36)}mm × {watchedValues.depth || 0}mm)
+                                      </Label>
+                                      <div className="flex items-center gap-2">
+                                        <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
+                                        <Switch
+                                          checked={bottomGaddiEnabled}
+                                          onCheckedChange={setBottomGaddiEnabled}
+                                          className="scale-100"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Front Laminate</Label>
+                                        <Popover open={bottomLaminateOpen} onOpenChange={setBottomLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.bottomPanelGrainDirection && (bottomLaminateSelection || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
+                                              ref={(el) => registerFieldRef('bottomPanelLaminateCode', el)}
+                                            >
+                                              {bottomLaminateSelection || 'Select front laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={async (currentValue) => {
+                                                        setBottomLaminateSelection(currentValue);
+                                                        updateLaminateWithTracking('bottomPanelLaminateCode', currentValue, 'user');
+                                                        // Auto-mark paired Inner Laminate as user-selected
+                                                        markLaminateAsUserSelected('bottomPanelInnerLaminateCode');
+
+                                                        // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
+                                                        const bottomBaseCode = currentValue.split('+')[0].trim();
+                                                        const bottomHasWoodGrain = woodGrainsPreferences[bottomBaseCode] === true;
+                                                        form.setValue('bottomPanelGrainDirection', bottomHasWoodGrain);
+
+                                                        if (panelsLinked) {
+                                                          syncLaminateCode(currentValue, 'bottom');
+                                                        }
+                                                        setBottomLaminateOpen(false);
+                                                        focusNextField('bottomPanelLaminateCode');
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${bottomLaminateSelection === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Inner Laminate</Label>
+                                        <Popover open={bottomInnerLaminateOpen} onOpenChange={setBottomInnerLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
+                                            >
+                                              {watchedValues.bottomPanelInnerLaminateCode || 'Select inner laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={(currentValue) => {
+                                                        updateLaminateWithTracking('bottomPanelInnerLaminateCode', currentValue, 'user');
+                                                        if (panelsLinked) {
+                                                          syncCabinetConfigInnerLaminate(currentValue, true);
+                                                        }
+                                                        setBottomInnerLaminateOpen(false);
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${watchedValues.bottomPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Left Panel */}
+                                  <div className="space-y-1 w-full">
+                                    <div className="flex items-center gap-3">
+                                      <Label className="text-xs sm:text-sm text-slate-600">
+                                        Left Panel ({watchedValues.depth || 0}mm × {(watchedValues.height || 0) - 36}mm)
+                                      </Label>
+                                      <div className="flex items-center gap-2">
+                                        <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
+                                        <Switch
+                                          checked={leftGaddiEnabled}
+                                          onCheckedChange={setLeftGaddiEnabled}
+                                          className="scale-100"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Front Laminate</Label>
+                                        <Popover open={leftLaminateOpen} onOpenChange={setLeftLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.leftPanelGrainDirection && (leftLaminateSelection || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
+                                              ref={(el) => registerFieldRef('leftPanelLaminateCode', el)}
+                                            >
+                                              {leftLaminateSelection || 'Select front laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={async (currentValue) => {
+                                                        setLeftLaminateSelection(currentValue);
+                                                        updateLaminateWithTracking('leftPanelLaminateCode', currentValue, 'user');
+                                                        // Auto-mark paired Inner Laminate as user-selected
+                                                        markLaminateAsUserSelected('leftPanelInnerLaminateCode');
+
+                                                        // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
+                                                        const leftBaseCode = currentValue.split('+')[0].trim();
+                                                        const leftHasWoodGrain = woodGrainsPreferences[leftBaseCode] === true;
+                                                        form.setValue('leftPanelGrainDirection', leftHasWoodGrain);
+
+                                                        if (panelsLinked) {
+                                                          syncLaminateCode(currentValue, 'left');
+                                                        }
+                                                        setLeftLaminateOpen(false);
+                                                        focusNextField('leftPanelLaminateCode');
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${leftLaminateSelection === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Inner Laminate</Label>
+                                        <Popover open={leftInnerLaminateOpen} onOpenChange={setLeftInnerLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
+                                            >
+                                              {watchedValues.leftPanelInnerLaminateCode || 'Select inner laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={(currentValue) => {
+                                                        updateLaminateWithTracking('leftPanelInnerLaminateCode', currentValue, 'user');
+                                                        if (panelsLinked) {
+                                                          syncCabinetConfigInnerLaminate(currentValue, true);
+                                                        }
+                                                        setLeftInnerLaminateOpen(false);
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${watchedValues.leftPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Right Panel */}
+                                  <div className="space-y-1 w-full">
+                                    <div className="flex items-center gap-3">
+                                      <Label className="text-xs sm:text-sm text-slate-600">
+                                        Right Panel ({watchedValues.depth || 0}mm × {(watchedValues.height || 0) - 36}mm)
+                                      </Label>
+                                      <div className="flex items-center gap-2">
+                                        <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
+                                        <Switch
+                                          checked={rightGaddiEnabled}
+                                          onCheckedChange={setRightGaddiEnabled}
+                                          className="scale-100"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Front Laminate</Label>
+                                        <Popover open={rightLaminateOpen} onOpenChange={setRightLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.rightPanelGrainDirection && (rightLaminateSelection || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
+                                              ref={(el) => registerFieldRef('rightPanelLaminateCode', el)}
+                                            >
+                                              {rightLaminateSelection || 'Select front laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={async (currentValue) => {
+                                                        setRightLaminateSelection(currentValue);
+                                                        updateLaminateWithTracking('rightPanelLaminateCode', currentValue, 'user');
+                                                        // Auto-mark paired Inner Laminate as user-selected
+                                                        markLaminateAsUserSelected('rightPanelInnerLaminateCode');
+
+                                                        // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
+                                                        const rightBaseCode = currentValue.split('+')[0].trim();
+                                                        const rightHasWoodGrain = woodGrainsPreferences[rightBaseCode] === true;
+                                                        form.setValue('rightPanelGrainDirection', rightHasWoodGrain);
+
+                                                        if (panelsLinked) {
+                                                          syncLaminateCode(currentValue, 'right');
+                                                        }
+                                                        setRightLaminateOpen(false);
+                                                        focusNextField('rightPanelLaminateCode');
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${rightLaminateSelection === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Inner Laminate</Label>
+                                        <Popover open={rightInnerLaminateOpen} onOpenChange={setRightInnerLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
+                                            >
+                                              {watchedValues.rightPanelInnerLaminateCode || 'Select inner laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={(currentValue) => {
+                                                        updateLaminateWithTracking('rightPanelInnerLaminateCode', currentValue, 'user');
+                                                        if (panelsLinked) {
+                                                          syncCabinetConfigInnerLaminate(currentValue, true);
+                                                        }
+                                                        setRightInnerLaminateOpen(false);
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${watchedValues.rightPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Back Panel */}
+                                  <div className="space-y-1 w-full">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <Label className="text-xs sm:text-sm text-slate-600">
+                                        Back Panel ({watchedValues.width - (watchedValues.backPanelWidthReduction || 20)}mm × {watchedValues.height - (watchedValues.backPanelHeightReduction || 20)}mm)
+                                      </Label>
+                                      <Select
+                                        value={(watchedValues.backPanelWidthReduction || 20).toString()}
+                                        onValueChange={(value) => {
+                                          const numValue = parseInt(value);
+                                          form.setValue('backPanelWidthReduction', numValue);
+                                          form.setValue('backPanelHeightReduction', numValue);
+                                        }}
+                                      >
+                                        <SelectTrigger className="w-[80px] h-9 text-xs">
+                                          <SelectValue placeholder="-20mm" />
+                                        </SelectTrigger>
+                                        <SelectContent align="end">
+                                          <SelectItem value="0">-0mm</SelectItem>
+                                          <SelectItem value="10">-10mm</SelectItem>
+                                          <SelectItem value="20">-20mm</SelectItem>
+                                          <SelectItem value="30">-30mm</SelectItem>
+                                          <SelectItem value="40">-40mm</SelectItem>
+                                          <SelectItem value="50">-50mm</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+
+                                    <div className="flex gap-4">
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Front Laminate</Label>
+                                        <Popover open={backLaminateOpen} onOpenChange={setBackLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.backPanelGrainDirection && (backLaminateSelection || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
+                                              ref={(el) => registerFieldRef('backPanelLaminateCode', el)}
+                                            >
+                                              {backLaminateSelection || 'Select front laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={async (currentValue) => {
+                                                        setBackLaminateSelection(currentValue);
+                                                        updateLaminateWithTracking('backPanelLaminateCode', currentValue, 'user');
+                                                        // Auto-mark paired Inner Laminate as user-selected
+                                                        markLaminateAsUserSelected('backPanelInnerLaminateCode');
+
+                                                        // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
+                                                        const backBaseCode = currentValue.split('+')[0].trim();
+                                                        const backHasWoodGrain = woodGrainsPreferences[backBaseCode] === true;
+                                                        form.setValue('backPanelGrainDirection', backHasWoodGrain);
+
+                                                        setBackLaminateOpen(false);
+                                                        focusNextField('backPanelLaminateCode');
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${backLaminateSelection === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+
+                                      <div className="space-y-1 flex-1">
+                                        <Label className="text-xs text-slate-600">Inner Laminate</Label>
+                                        <Popover open={backInnerLaminateOpen} onOpenChange={setBackInnerLaminateOpen}>
+                                          <PopoverTrigger asChild>
+                                            <Button
+                                              variant="outline"
+                                              role="combobox"
+                                              className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
+                                            >
+                                              {watchedValues.backPanelInnerLaminateCode || 'Select inner laminate'}
+                                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                              <CommandInput placeholder="Type to filter codes..." className="text-xs" />
+                                              <CommandList>
+                                                <CommandEmpty>
+                                                  {globalLaminateMemory.length === 0
+                                                    ? 'No saved codes. Add codes in Master Settings.'
+                                                    : 'No matching codes found.'}
+                                                </CommandEmpty>
+                                                <CommandGroup>
+                                                  {globalLaminateMemory.map((code) => (
+                                                    <CommandItem
+                                                      key={code}
+                                                      value={code}
+                                                      onSelect={(currentValue) => {
+                                                        updateLaminateWithTracking('backPanelInnerLaminateCode', currentValue, 'user');
+                                                        setBackInnerLaminateOpen(false);
+                                                      }}
+                                                      className="text-xs"
+                                                    >
+                                                      <Check
+                                                        className={`mr-2 h-4 w-4 ${watchedValues.backPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                          }`}
+                                                      />
+                                                      {code}
+                                                    </CommandItem>
+                                                  ))}
+                                                </CommandGroup>
+                                              </CommandList>
+                                            </Command>
+                                          </PopoverContent>
+                                        </Popover>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+
+                                {/* Shutters Enabled Toggle */}
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                          {/* Actions */}
+                          <div className="flex items-center justify-end pt-4 border-t border-slate-200">
+                            <div className="flex items-center gap-3">
+                              <div className="flex space-x-2">
+                                <Button type="submit" className="bg-primary-600 hover:bg-primary-700" data-testid="button-add-cabinet">
+                                  <i className="fas fa-plus mr-2"></i>
+                                  Add Cabinet
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      {/* Basic Mode - Quick Shutter */}
+                      {cabinetConfigMode === 'basic' && (
+                        <>
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <Label>Shutter Name</Label>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-600">Gaddi</span>
+                                  <Switch
+                                    checked={form.watch('shutterGaddi') ?? false}
+                                    onCheckedChange={(checked) => form.setValue('shutterGaddi', checked)}
+                                    data-testid="toggle-shutter-gaddi"
+                                  />
+                                </div>
+                              </div>
+                              <Input
+                                {...form.register('name')}
+                                placeholder="e.g., Kitchen Shutter"
+                                className="text-sm"
+                              />
+                            </div>
+
+                            {/* Quick Shutter Front & Inner Laminates - After Shutter Name */}
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                  <Label className="text-xs font-medium">Front Laminate</Label>
+                                  <Popover open={basicShutterLaminateOpen} onOpenChange={setBasicShutterLaminateOpen}>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className="w-full justify-between text-sm h-10"
+                                      >
+                                        {watchedValues.shutterLaminateCode || 'Select'}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0">
+                                      <Command>
+                                        <CommandInput placeholder="Type to filter codes..." className="text-sm" />
+                                        <CommandList>
+                                          <CommandEmpty>
+                                            {globalLaminateMemory.length === 0
+                                              ? 'No saved codes. Add codes in Master Settings.'
+                                              : 'No matching codes found.'}
+                                          </CommandEmpty>
+                                          <CommandGroup>
+                                            {globalLaminateMemory.map((code) => (
+                                              <CommandItem
+                                                key={code}
+                                                value={code}
+                                                onSelect={(currentValue) => {
+                                                  updateLaminateWithTracking('shutterLaminateCode', currentValue, 'user');
+                                                  setBasicShutterLaminateOpen(false);
+                                                }}
+                                                className="text-sm"
+                                              >
+                                                <Check
+                                                  className={`mr-2 h-4 w-4 ${watchedValues.shutterLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                    }`}
+                                                />
+                                                {code}
+                                              </CommandItem>
+                                            ))}
+                                          </CommandGroup>
+                                        </CommandList>
+                                      </Command>
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label className="text-xs font-medium">Inner Laminate</Label>
+                                  <Popover open={basicShutterInnerLaminateOpen} onOpenChange={setBasicShutterInnerLaminateOpen}>
+                                    <PopoverTrigger asChild>
+                                      <Button
+                                        variant="outline"
+                                        role="combobox"
+                                        className="w-full justify-between text-sm h-10"
+                                      >
+                                        {watchedValues.shutterInnerLaminateCode || 'Select'}
+                                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                      </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-[300px] p-0">
+                                      <Command>
+                                        <CommandInput placeholder="Type to filter codes..." className="text-sm" />
+                                        <CommandList>
+                                          <CommandEmpty>
+                                            {globalLaminateMemory.length === 0
+                                              ? 'No saved codes. Add codes in Master Settings.'
+                                              : 'No matching codes found.'}
+                                          </CommandEmpty>
+                                          <CommandGroup>
+                                            {globalLaminateMemory.map((code) => (
+                                              <CommandItem
+                                                key={code}
+                                                value={code}
+                                                onSelect={(currentValue) => {
+                                                  updateLaminateWithTracking('shutterInnerLaminateCode', currentValue, 'user');
+                                                  setBasicShutterInnerLaminateOpen(false);
+                                                }}
+                                                className="text-sm"
+                                              >
+                                                <Check
+                                                  className={`mr-2 h-4 w-4 ${watchedValues.shutterInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
+                                                    }`}
+                                                />
+                                                {code}
+                                              </CommandItem>
+                                            ))}
+                                          </CommandGroup>
+                                        </CommandList>
+                                      </Command>
+                                    </PopoverContent>
+                                  </Popover>
+                                </div>
                               </div>
                             </div>
 
-                            {/* Custom Shutter Dimensions */}
-                            {watchedValues.shutters && watchedValues.shutters.length > 0 && (
-                              <div>
-                                <div className="space-y-2">
-                                  {watchedValues.shutters.map((shutter, index) => (
-                                    <div key={index} className="bg-white rounded">
-                                      <div className="flex items-center justify-between">
-                                        <Label className="text-sm font-medium text-slate-700">Shutter {index + 1}:</Label>
-                                        <Button
-                                          type="button"
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => {
-                                            const newShutters = watchedValues.shutters.filter((_, i) => i !== index);
-                                            form.setValue('shutters', newShutters);
-                                            form.setValue('shutterCount', newShutters.length);
+                            <div className="flex gap-2">
+                              <div className="space-y-2 flex-1 min-w-0">
+                                <Label className="text-xs">Height (mm)</Label>
+                                <Input
+                                  type="number"
+                                  {...form.register('height', { valueAsNumber: true })}
+                                  placeholder="2000"
+                                  className="text-sm w-full"
+                                />
+                              </div>
+                              <div className="space-y-2 flex-1 min-w-0">
+                                <Label className="text-xs">Width (mm)</Label>
+                                <Input
+                                  type="number"
+                                  {...form.register('width', { valueAsNumber: true })}
+                                  placeholder="600"
+                                  className="text-sm w-full"
+                                />
+                              </div>
+                              <div className="space-y-2 flex-1 min-w-0">
+                                <Label className="text-xs">Quantity</Label>
+                                <Input
+                                  type="number"
+                                  {...form.register('shutterCount', { valueAsNumber: true })}
+                                  placeholder="1"
+                                  className="text-sm w-full"
+                                  min="1"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Visual Preview for Quick Shutter */}
+                            {(() => {
+                              const height = form.getValues('height');
+                              const width = form.getValues('width');
+                              const shutterCount = form.getValues('shutterCount');
+                              const shutterLaminate = form.getValues('shutterInnerLaminateCode') || 'Not Set';
+                              return height > 0 && width > 0 && shutterCount > 0 ? (
+                                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                  <div className="text-xs text-blue-700 font-semibold mb-1 text-center">
+                                    Quick Shutter Preview
+                                  </div>
+                                  <div className="text-xs text-blue-600 mb-3 text-center">
+                                    Laminate: {shutterLaminate}
+                                  </div>
+                                  <div className="flex flex-wrap gap-4 justify-center">
+                                    {Array.from({ length: shutterCount || 1 }, (_, index) => (
+                                      <div key={index} className="relative">
+                                        {/* Height label on top */}
+                                        <div
+                                          className="absolute -top-5 left-0 text-xs text-blue-600 font-medium"
+                                          style={{
+                                            width: `${(height || 0) * 0.10}px`,
+                                            textAlign: 'center'
                                           }}
-                                          className="text-xs text-red-600 hover:text-red-800 h-6 w-6 p-0"
                                         >
-                                          <i className="fas fa-times"></i>
-                                        </Button>
+                                          {height}mm
+                                        </div>
+
+                                        {/* Width label on left */}
+                                        <div
+                                          className="absolute -left-12 top-0 text-xs text-blue-600 font-medium flex items-center"
+                                          style={{
+                                            height: `${(width || 0) * 0.10}px`,
+                                          }}
+                                        >
+                                          {width}mm
+                                        </div>
+
+                                        {/* Shutter Rectangle */}
+                                        <div
+                                          className="bg-blue-100 border-2 border-blue-400 rounded flex items-center justify-center"
+                                          style={{
+                                            width: `${(height || 0) * 0.10}px`,
+                                            height: `${(width || 0) * 0.10}px`,
+                                            minWidth: '80px',
+                                            minHeight: '20px'
+                                          }}
+                                        >
+                                          <span className="text-xs text-blue-700 font-medium">
+                                            #{index + 1}
+                                          </span>
+                                        </div>
                                       </div>
-                                      {/* All fields in compact grid - 4 columns: H, -H, W, -W */}
-                                      <div className="grid grid-cols-4 gap-1">
-                                        <div>
-                                          <Label className="text-xs text-slate-500">H</Label>
-                                          <Input
-                                            ref={index === 0 ? shutterHeightInputRef : null}
-                                            type="number"
-                                            value={shutter.height === 0 ? '' : shutter.height}
-                                            onChange={(e) => {
-                                              const newShutters = [...watchedValues.shutters];
-                                              const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                              newShutters[index] = { ...newShutters[index], height: newValue };
-                                              form.setValue('shutters', newShutters);
-                                            }}
-                                            className="text-xs h-8 w-full font-mono"
-                                            placeholder={watchedValues.height?.toString() || "800"}
-                                            min="0"
-                                            max="9999"
-                                            data-testid="input-shutter-height"
-                                          />
-                                        </div>
-                                        <div>
-                                          <Label className="text-xs text-slate-500">-H</Label>
-                                          <Input
-                                            type="number"
-                                            value={watchedValues.shutterHeightReduction?.toString() || '0'}
-                                            onChange={(e) => {
-                                              const reductionValue = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                              form.setValue('shutterHeightReduction', reductionValue);
-                                              const cabinetHeight = watchedValues.height || 800;
-                                              const newHeight = cabinetHeight + reductionValue;
-                                              const newShutters = watchedValues.shutters.map(shutter => ({
-                                                ...shutter,
-                                                height: newHeight
-                                              }));
-                                              form.setValue('shutters', newShutters);
-                                            }}
-                                            className="text-xs h-8 w-full font-mono"
-                                            placeholder="0"
-                                          />
-                                        </div>
-                                        <div>
-                                          <Label className="text-xs text-slate-500">W</Label>
-                                          <Input
-                                            type="number"
-                                            value={shutter.width === 0 ? '' : shutter.width}
-                                            onChange={(e) => {
-                                              const newShutters = [...watchedValues.shutters];
-                                              const newValue = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                              newShutters[index] = { ...newShutters[index], width: newValue };
-                                              form.setValue('shutters', newShutters);
-                                            }}
-                                            className="text-xs h-8 w-full font-mono"
-                                            placeholder={Math.round((watchedValues.width || 600) / watchedValues.shutterCount).toString()}
-                                            min="0"
-                                            max="9999"
-                                          />
-                                        </div>
-                                        <div>
-                                          <Label className="text-xs text-slate-500">-W</Label>
-                                          <Input
-                                            type="number"
-                                            value={watchedValues.shutterWidthReduction?.toString() || '0'}
-                                            onChange={(e) => {
-                                              const reductionValue = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                              form.setValue('shutterWidthReduction', reductionValue);
-                                              const cabinetWidth = watchedValues.width || 600;
-                                              const shutterCount = watchedValues.shutterCount || 1;
-                                              const baseWidth = Math.round(cabinetWidth / shutterCount);
-                                              const newWidth = baseWidth + reductionValue;
-                                              const newShutters = watchedValues.shutters.map(shutter => ({
-                                                ...shutter,
-                                                width: newWidth
-                                              }));
-                                              form.setValue('shutters', newShutters);
-                                            }}
-                                            className="text-xs h-8 w-full font-mono"
-                                            placeholder="0"
-                                          />
-                                        </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null;
+                            })()}
+
+                            {/* Colour Frame Section */}
+                            <div className="space-y-3 pt-4 border-t border-slate-200">
+                              <div className="flex items-center justify-between">
+                                <Label className="text-sm font-medium">Colour Frame (2400 × 80)</Label>
+                                <Switch
+                                  checked={colourFrameEnabled}
+                                  onCheckedChange={(checked) => {
+                                    setColourFrameEnabled(checked);
+                                    if (checked) {
+                                      const shutterLaminate = form.getValues('shutterInnerLaminateCode') || '';
+                                      const shutterPlywood = form.getValues('shutterPlywoodBrand') || 'Apple Ply 16mm BWP';
+                                      const shutterGrainDirection = Boolean(form.getValues('shutterGrainDirection'));
+                                      setColourFrameForm({
+                                        height: 2400,
+                                        width: 80,
+                                        laminateCode: shutterLaminate,
+                                        quantity: 1,
+                                        note: '',
+                                        customLaminateCode: '',
+                                        plywoodType: shutterPlywood,
+                                        grainDirection: shutterGrainDirection
+                                      });
+                                    }
+                                  }}
+                                  data-testid="toggle-colour-frame"
+                                />
+                              </div>
+
+                              {colourFrameEnabled && (
+                                <div className="space-y-4 pl-4 border-l-2 border-blue-200">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                      <Label className="text-sm">Height (mm)</Label>
+                                      <Input
+                                        type="number"
+                                        value={colourFrameForm.height}
+                                        onChange={(e) => setColourFrameForm(prev => ({ ...prev, height: parseInt(e.target.value) || 2400 }))}
+                                        className="text-sm"
+                                        data-testid="input-colour-frame-height"
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label className="text-sm">Width (mm)</Label>
+                                      <Input
+                                        type="number"
+                                        value={colourFrameForm.width}
+                                        onChange={(e) => setColourFrameForm(prev => ({ ...prev, width: parseInt(e.target.value) || 80 }))}
+                                        className="text-sm"
+                                        data-testid="input-colour-frame-width"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <Label className="text-sm">Quantity</Label>
+                                    <Input
+                                      type="number"
+                                      value={colourFrameForm.quantity}
+                                      onChange={(e) => setColourFrameForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                                      className="text-sm"
+                                      min="1"
+                                      data-testid="input-colour-frame-quantity"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Visual Preview for Colour Frame */}
+                            {colourFrameEnabled && colourFrameForm.height > 0 && colourFrameForm.width > 0 && (
+                              <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                <div className="text-xs text-blue-700 font-semibold mb-1 text-center">
+                                  Colour Frame Preview
+                                </div>
+                                <div className="text-xs text-blue-600 mb-3 text-center">
+                                  Laminate: {colourFrameForm.laminateCode || 'Not Set'}
+                                </div>
+                                <div className="flex flex-wrap gap-4 justify-center">
+                                  {Array.from({ length: colourFrameForm.quantity || 1 }, (_, index) => (
+                                    <div key={index} className="relative">
+                                      {/* Height label on top */}
+                                      <div
+                                        className="absolute -top-5 left-0 text-xs text-blue-600 font-medium"
+                                        style={{
+                                          width: `${(colourFrameForm.height || 0) * 0.10}px`,
+                                          textAlign: 'center'
+                                        }}
+                                      >
+                                        {colourFrameForm.height}mm
+                                      </div>
+
+                                      {/* Width label on left */}
+                                      <div
+                                        className="absolute -left-12 top-0 text-xs text-blue-600 font-medium flex items-center"
+                                        style={{
+                                          height: `${(colourFrameForm.width || 0) * 0.10}px`,
+                                        }}
+                                      >
+                                        {colourFrameForm.width}mm
+                                      </div>
+
+                                      {/* Frame Rectangle */}
+                                      <div
+                                        className="bg-blue-100 border-2 border-blue-400 rounded flex items-center justify-center"
+                                        style={{
+                                          width: `${(colourFrameForm.height || 0) * 0.10}px`,
+                                          height: `${(colourFrameForm.width || 0) * 0.10}px`,
+                                          minWidth: '80px',
+                                          minHeight: '20px'
+                                        }}
+                                      >
+                                        <span className="text-xs text-blue-700 font-medium">
+                                          #{index + 1}
+                                        </span>
                                       </div>
                                     </div>
                                   ))}
                                 </div>
                               </div>
                             )}
-                            </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
 
-                    {/* Panel Laminate Selection */}
-                    <Collapsible open={individualPanelsOpen} onOpenChange={setIndividualPanelsOpen} className="mb-6">
-                      <CollapsibleTrigger asChild>
-                        <Button
-                          ref={individualPanelsRef}
-                          variant="outline"
-                          className="w-full justify-between text-sm font-medium"
-                          type="button"
-                        >
-                          <span className="flex items-center">
-                            <i className="fas fa-th-large mr-2 text-primary-600"></i>
-                            Individual Panel Laminate Selection
-                          </span>
-                          <i className={`fas ${individualPanelsOpen ? 'fa-chevron-down' : 'fa-chevron-right'} text-gray-400`}></i>
-                        </Button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="mt-2 space-y-2 border-l-2 border-primary-200 pl-4">
-                        <div className="flex items-center justify-end mb-2">
-                          <div className="flex items-center space-x-4">
-                          <div className="flex items-center space-x-2">
-                            <Label htmlFor="panels-link" className="text-xs text-slate-600">
-                              {panelsLinked ? 'Linked' : 'Unlinked'}
-                            </Label>
-                            <Switch
-                              id="panels-link"
-                              checked={panelsLinked}
-                              onCheckedChange={setPanelsLinked}
-                              data-testid="switch-panels-link"
-                            />
-                            <i className={`fas ${panelsLinked ? 'fa-link text-blue-600' : 'fa-unlink text-gray-600'} text-sm`}></i>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Label htmlFor="master-gaddi" className="text-xs text-slate-600">
-                              Gaddi
-                            </Label>
-                            <Switch
-                              id="master-gaddi"
-                              checked={allGaddiEnabled}
-                              onCheckedChange={toggleAllGaddi}
-                              data-testid="switch-master-gaddi"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        {/* Top Panel */}
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-3">
-                            <Label className="text-xs sm:text-sm text-slate-600">
-                              Top Panel ({(watchedValues.width || 0) - (watchedValues.widthReduction || 36)}mm × {watchedValues.depth || 0}mm)
-                            </Label>
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
-                              <Switch
-                                checked={topGaddiEnabled}
-                                onCheckedChange={setTopGaddiEnabled}
-                                className="scale-100"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-4">
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Front Laminate</Label>
-                              <Popover open={topLaminateOpen} onOpenChange={setTopLaminateOpen}>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.topPanelGrainDirection && (form.watch('topPanelLaminateCode') || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
-                                      ref={(el) => registerFieldRef('topPanelLaminateCode', el)}
-                                    >
-                                      {form.watch('topPanelLaminateCode') || 'Select front laminate'}
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[300px] p-0">
-                                    <Command>
-                                      <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                      <CommandList>
-                                        <CommandEmpty>
-                                          {globalLaminateMemory.length === 0 
-                                            ? 'No saved codes. Add codes in Master Settings.'
-                                            : 'No matching codes found.'}
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {globalLaminateMemory.map((code) => (
-                                            <CommandItem
-                                              key={code}
-                                              value={code}
-                                              onSelect={async (currentValue) => {
-                                                updateLaminateWithTracking('topPanelLaminateCode', currentValue, 'user');
-                                                // Auto-mark paired Inner Laminate as user-selected (it has a sensible default)
-                                                markLaminateAsUserSelected('topPanelInnerLaminateCode');
-                                                
-                                                // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
-                                                const topBaseCode = currentValue.split('+')[0].trim();
-                                                const topHasWoodGrain = woodGrainsPreferences[topBaseCode] === true;
-                                                form.setValue('topPanelGrainDirection', topHasWoodGrain);
-                                                
-                                                if (panelsLinked) {
-                                                  syncLaminateCode(currentValue, 'top');
-                                                }
-                                                setTopLaminateOpen(false);
-                                                focusNextField('topPanelLaminateCode');
-                                              }}
-                                              className="text-xs"
-                                            >
-                                              <Check
-                                                className={`mr-2 h-4 w-4 ${
-                                                  form.watch('topPanelLaminateCode') === code ? 'opacity-100' : 'opacity-0'
-                                                }`}
-                                              />
-                                              {code}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                              </Popover>
-                            </div>
-                            
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
-                              <Popover open={topInnerLaminateOpen} onOpenChange={setTopInnerLaminateOpen}>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
-                                    >
-                                      {watchedValues.topPanelInnerLaminateCode || 'Select inner laminate'}
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[300px] p-0">
-                                    <Command>
-                                      <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                      <CommandList>
-                                        <CommandEmpty>
-                                          {globalLaminateMemory.length === 0 
-                                            ? 'No saved codes. Add codes in Master Settings.'
-                                            : 'No matching codes found.'}
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {globalLaminateMemory.map((code) => (
-                                            <CommandItem
-                                              key={code}
-                                              value={code}
-                                              onSelect={(currentValue) => {
-                                                updateLaminateWithTracking('topPanelInnerLaminateCode', currentValue, 'user');
-                                                if (panelsLinked) {
-                                                  syncCabinetConfigInnerLaminate(currentValue, true);
-                                                }
-                                                setTopInnerLaminateOpen(false);
-                                              }}
-                                              className="text-xs"
-                                            >
-                                              <Check
-                                                className={`mr-2 h-4 w-4 ${
-                                                  watchedValues.topPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                                }`}
-                                              />
-                                              {code}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                              </Popover>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Other Panels Grid */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
-
-                        {/* Bottom Panel */}
-                        <div className="space-y-1 w-full">
-                          <div className="flex items-center gap-3">
-                            <Label className="text-xs sm:text-sm text-slate-600">
-                              Bottom Panel ({(watchedValues.width || 0) - (watchedValues.widthReduction || 36)}mm × {watchedValues.depth || 0}mm)
-                            </Label>
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
-                              <Switch
-                                checked={bottomGaddiEnabled}
-                                onCheckedChange={setBottomGaddiEnabled}
-                                className="scale-100"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-4">
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Front Laminate</Label>
-                              <Popover open={bottomLaminateOpen} onOpenChange={setBottomLaminateOpen}>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.bottomPanelGrainDirection && (form.watch('bottomPanelLaminateCode') || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
-                                    ref={(el) => registerFieldRef('bottomPanelLaminateCode', el)}
-                                  >
-                                    {form.watch('bottomPanelLaminateCode') || 'Select front laminate'}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[300px] p-0">
-                                  <Command>
-                                    <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                    <CommandList>
-                                      <CommandEmpty>
-                                        {globalLaminateMemory.length === 0 
-                                          ? 'No saved codes. Add codes in Master Settings.'
-                                          : 'No matching codes found.'}
-                                      </CommandEmpty>
-                                      <CommandGroup>
-                                        {globalLaminateMemory.map((code) => (
-                                          <CommandItem
-                                            key={code}
-                                            value={code}
-                                            onSelect={async (currentValue) => {
-                                              updateLaminateWithTracking('bottomPanelLaminateCode', currentValue, 'user');
-                                              // Auto-mark paired Inner Laminate as user-selected
-                                              markLaminateAsUserSelected('bottomPanelInnerLaminateCode');
-                                              
-                                              // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
-                                              const bottomBaseCode = currentValue.split('+')[0].trim();
-                                              const bottomHasWoodGrain = woodGrainsPreferences[bottomBaseCode] === true;
-                                              form.setValue('bottomPanelGrainDirection', bottomHasWoodGrain);
-                                              
-                                              if (panelsLinked) {
-                                                syncLaminateCode(currentValue, 'bottom');
-                                              }
-                                              setBottomLaminateOpen(false);
-                                              focusNextField('bottomPanelLaminateCode');
-                                            }}
-                                            className="text-xs"
-                                          >
-                                            <Check
-                                              className={`mr-2 h-4 w-4 ${
-                                                form.watch('bottomPanelLaminateCode') === code ? 'opacity-100' : 'opacity-0'
-                                              }`}
-                                            />
-                                            {code}
-                                          </CommandItem>
-                                        ))}
-                                      </CommandGroup>
-                                    </CommandList>
-                                  </Command>
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                            
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
-                              <Popover open={bottomInnerLaminateOpen} onOpenChange={setBottomInnerLaminateOpen}>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
-                                    >
-                                      {watchedValues.bottomPanelInnerLaminateCode || 'Select inner laminate'}
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[300px] p-0">
-                                    <Command>
-                                      <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                      <CommandList>
-                                        <CommandEmpty>
-                                          {globalLaminateMemory.length === 0 
-                                            ? 'No saved codes. Add codes in Master Settings.'
-                                            : 'No matching codes found.'}
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {globalLaminateMemory.map((code) => (
-                                            <CommandItem
-                                              key={code}
-                                              value={code}
-                                              onSelect={(currentValue) => {
-                                                updateLaminateWithTracking('bottomPanelInnerLaminateCode', currentValue, 'user');
-                                                if (panelsLinked) {
-                                                  syncCabinetConfigInnerLaminate(currentValue, true);
-                                                }
-                                                setBottomInnerLaminateOpen(false);
-                                              }}
-                                              className="text-xs"
-                                            >
-                                              <Check
-                                                className={`mr-2 h-4 w-4 ${
-                                                  watchedValues.bottomPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                                }`}
-                                              />
-                                              {code}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                              </Popover>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Left Panel */}
-                        <div className="space-y-1 w-full">
-                          <div className="flex items-center gap-3">
-                            <Label className="text-xs sm:text-sm text-slate-600">
-                              Left Panel ({watchedValues.depth || 0}mm × {(watchedValues.height || 0) - 36}mm)
-                            </Label>
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
-                              <Switch
-                                checked={leftGaddiEnabled}
-                                onCheckedChange={setLeftGaddiEnabled}
-                                className="scale-100"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-4">
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Front Laminate</Label>
-                              <Popover open={leftLaminateOpen} onOpenChange={setLeftLaminateOpen}>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.leftPanelGrainDirection && (form.watch('leftPanelLaminateCode') || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
-                                    ref={(el) => registerFieldRef('leftPanelLaminateCode', el)}
-                                  >
-                                    {form.watch('leftPanelLaminateCode') || 'Select front laminate'}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[300px] p-0">
-                                  <Command>
-                                    <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                    <CommandList>
-                                      <CommandEmpty>
-                                        {globalLaminateMemory.length === 0 
-                                          ? 'No saved codes. Add codes in Master Settings.'
-                                          : 'No matching codes found.'}
-                                      </CommandEmpty>
-                                      <CommandGroup>
-                                        {globalLaminateMemory.map((code) => (
-                                          <CommandItem
-                                            key={code}
-                                            value={code}
-                                            onSelect={async (currentValue) => {
-                                              updateLaminateWithTracking('leftPanelLaminateCode', currentValue, 'user');
-                                              // Auto-mark paired Inner Laminate as user-selected
-                                              markLaminateAsUserSelected('leftPanelInnerLaminateCode');
-                                              
-                                              // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
-                                              const leftBaseCode = currentValue.split('+')[0].trim();
-                                              const leftHasWoodGrain = woodGrainsPreferences[leftBaseCode] === true;
-                                              form.setValue('leftPanelGrainDirection', leftHasWoodGrain);
-                                              
-                                              if (panelsLinked) {
-                                                syncLaminateCode(currentValue, 'left');
-                                              }
-                                              setLeftLaminateOpen(false);
-                                              focusNextField('leftPanelLaminateCode');
-                                            }}
-                                            className="text-xs"
-                                          >
-                                            <Check
-                                              className={`mr-2 h-4 w-4 ${
-                                                form.watch('leftPanelLaminateCode') === code ? 'opacity-100' : 'opacity-0'
-                                              }`}
-                                            />
-                                            {code}
-                                          </CommandItem>
-                                        ))}
-                                      </CommandGroup>
-                                    </CommandList>
-                                  </Command>
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                            
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
-                              <Popover open={leftInnerLaminateOpen} onOpenChange={setLeftInnerLaminateOpen}>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
-                                    >
-                                      {watchedValues.leftPanelInnerLaminateCode || 'Select inner laminate'}
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[300px] p-0">
-                                    <Command>
-                                      <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                      <CommandList>
-                                        <CommandEmpty>
-                                          {globalLaminateMemory.length === 0 
-                                            ? 'No saved codes. Add codes in Master Settings.'
-                                            : 'No matching codes found.'}
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {globalLaminateMemory.map((code) => (
-                                            <CommandItem
-                                              key={code}
-                                              value={code}
-                                              onSelect={(currentValue) => {
-                                                updateLaminateWithTracking('leftPanelInnerLaminateCode', currentValue, 'user');
-                                                if (panelsLinked) {
-                                                  syncCabinetConfigInnerLaminate(currentValue, true);
-                                                }
-                                                setLeftInnerLaminateOpen(false);
-                                              }}
-                                              className="text-xs"
-                                            >
-                                              <Check
-                                                className={`mr-2 h-4 w-4 ${
-                                                  watchedValues.leftPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                                }`}
-                                              />
-                                              {code}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                              </Popover>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Right Panel */}
-                        <div className="space-y-1 w-full">
-                          <div className="flex items-center gap-3">
-                            <Label className="text-xs sm:text-sm text-slate-600">
-                              Right Panel ({watchedValues.depth || 0}mm × {(watchedValues.height || 0) - 36}mm)
-                            </Label>
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs sm:text-sm text-slate-600">Gaddi</Label>
-                              <Switch
-                                checked={rightGaddiEnabled}
-                                onCheckedChange={setRightGaddiEnabled}
-                                className="scale-100"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-4">
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Front Laminate</Label>
-                              <Popover open={rightLaminateOpen} onOpenChange={setRightLaminateOpen}>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.rightPanelGrainDirection && (form.watch('rightPanelLaminateCode') || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
-                                    ref={(el) => registerFieldRef('rightPanelLaminateCode', el)}
-                                  >
-                                    {form.watch('rightPanelLaminateCode') || 'Select front laminate'}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[300px] p-0">
-                                  <Command>
-                                    <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                    <CommandList>
-                                      <CommandEmpty>
-                                        {globalLaminateMemory.length === 0 
-                                          ? 'No saved codes. Add codes in Master Settings.'
-                                          : 'No matching codes found.'}
-                                      </CommandEmpty>
-                                      <CommandGroup>
-                                        {globalLaminateMemory.map((code) => (
-                                          <CommandItem
-                                            key={code}
-                                            value={code}
-                                            onSelect={async (currentValue) => {
-                                              updateLaminateWithTracking('rightPanelLaminateCode', currentValue, 'user');
-                                              // Auto-mark paired Inner Laminate as user-selected
-                                              markLaminateAsUserSelected('rightPanelInnerLaminateCode');
-                                              
-                                              // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
-                                              const rightBaseCode = currentValue.split('+')[0].trim();
-                                              const rightHasWoodGrain = woodGrainsPreferences[rightBaseCode] === true;
-                                              form.setValue('rightPanelGrainDirection', rightHasWoodGrain);
-                                              
-                                              if (panelsLinked) {
-                                                syncLaminateCode(currentValue, 'right');
-                                              }
-                                              setRightLaminateOpen(false);
-                                              focusNextField('rightPanelLaminateCode');
-                                            }}
-                                            className="text-xs"
-                                          >
-                                            <Check
-                                              className={`mr-2 h-4 w-4 ${
-                                                form.watch('rightPanelLaminateCode') === code ? 'opacity-100' : 'opacity-0'
-                                              }`}
-                                            />
-                                            {code}
-                                          </CommandItem>
-                                        ))}
-                                      </CommandGroup>
-                                    </CommandList>
-                                  </Command>
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                            
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
-                              <Popover open={rightInnerLaminateOpen} onOpenChange={setRightInnerLaminateOpen}>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      role="combobox"
-                                      className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
-                                    >
-                                      {watchedValues.rightPanelInnerLaminateCode || 'Select inner laminate'}
-                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-[300px] p-0">
-                                    <Command>
-                                      <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                      <CommandList>
-                                        <CommandEmpty>
-                                          {globalLaminateMemory.length === 0 
-                                            ? 'No saved codes. Add codes in Master Settings.'
-                                            : 'No matching codes found.'}
-                                        </CommandEmpty>
-                                        <CommandGroup>
-                                          {globalLaminateMemory.map((code) => (
-                                            <CommandItem
-                                              key={code}
-                                              value={code}
-                                              onSelect={(currentValue) => {
-                                                updateLaminateWithTracking('rightPanelInnerLaminateCode', currentValue, 'user');
-                                                if (panelsLinked) {
-                                                  syncCabinetConfigInnerLaminate(currentValue, true);
-                                                }
-                                                setRightInnerLaminateOpen(false);
-                                              }}
-                                              className="text-xs"
-                                            >
-                                              <Check
-                                                className={`mr-2 h-4 w-4 ${
-                                                  watchedValues.rightPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                                }`}
-                                              />
-                                              {code}
-                                            </CommandItem>
-                                          ))}
-                                        </CommandGroup>
-                                      </CommandList>
-                                    </Command>
-                                  </PopoverContent>
-                              </Popover>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Back Panel */}
-                        <div className="space-y-1 w-full">
-                          <div className="flex items-center justify-between gap-2">
-                            <Label className="text-xs sm:text-sm text-slate-600">
-                              Back Panel ({watchedValues.width - (watchedValues.backPanelWidthReduction || 20)}mm × {watchedValues.height - (watchedValues.backPanelHeightReduction || 20)}mm)
-                            </Label>
-                            <Select 
-                              value={(watchedValues.backPanelWidthReduction || 20).toString()}
-                              onValueChange={(value) => {
-                                const numValue = parseInt(value);
-                                form.setValue('backPanelWidthReduction', numValue);
-                                form.setValue('backPanelHeightReduction', numValue);
-                              }}
-                            >
-                              <SelectTrigger className="w-[80px] h-9 text-xs">
-                                <SelectValue placeholder="-20mm" />
-                              </SelectTrigger>
-                              <SelectContent align="end">
-                                <SelectItem value="0">-0mm</SelectItem>
-                                <SelectItem value="10">-10mm</SelectItem>
-                                <SelectItem value="20">-20mm</SelectItem>
-                                <SelectItem value="30">-30mm</SelectItem>
-                                <SelectItem value="40">-40mm</SelectItem>
-                                <SelectItem value="50">-50mm</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          
-                          <div className="flex gap-4">
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Front Laminate</Label>
-                              <Popover open={backLaminateOpen} onOpenChange={setBackLaminateOpen}>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  role="combobox"
-                                  className={`w-full justify-between text-xs sm:text-sm h-10 sm:h-9 ${watchedValues.backPanelGrainDirection && (form.watch('backPanelLaminateCode') || '').toLowerCase().includes('wood') ? 'text-red-600 font-semibold' : ''}`}
-                                  ref={(el) => registerFieldRef('backPanelLaminateCode', el)}
-                                >
-                                  {form.watch('backPanelLaminateCode') || 'Select front laminate'}
-                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          {/* Actions */}
+                          <div className="flex items-center justify-end pt-4 border-t border-slate-200">
+                            <div className="flex items-center gap-3">
+                              <div className="flex space-x-2">
+                                <Button type="submit" className="bg-primary-600 hover:bg-primary-700" data-testid="button-add-shutter">
+                                  <i className="fas fa-plus mr-2"></i>
+                                  Add Shutter
                                 </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-[300px] p-0">
-                                <Command>
-                                  <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                  <CommandList>
-                                    <CommandEmpty>
-                                      {globalLaminateMemory.length === 0 
-                                        ? 'No saved codes. Add codes in Master Settings.'
-                                        : 'No matching codes found.'}
-                                    </CommandEmpty>
-                                    <CommandGroup>
-                                      {globalLaminateMemory.map((code) => (
-                                        <CommandItem
-                                          key={code}
-                                          value={code}
-                                          onSelect={async (currentValue) => {
-                                            updateLaminateWithTracking('backPanelLaminateCode', currentValue, 'user');
-                                            // Auto-mark paired Inner Laminate as user-selected
-                                            markLaminateAsUserSelected('backPanelInnerLaminateCode');
-                                            
-                                            // ✅ DIRECT LINK: Auto-sync grain direction from database preferences
-                                            const backBaseCode = currentValue.split('+')[0].trim();
-                                            const backHasWoodGrain = woodGrainsPreferences[backBaseCode] === true;
-                                            form.setValue('backPanelGrainDirection', backHasWoodGrain);
-                                            
-                                            setBackLaminateOpen(false);
-                                            focusNextField('backPanelLaminateCode');
-                                          }}
-                                          className="text-xs"
-                                        >
-                                          <Check
-                                            className={`mr-2 h-4 w-4 ${
-                                              form.watch('backPanelLaminateCode') === code ? 'opacity-100' : 'opacity-0'
-                                            }`}
-                                          />
-                                          {code}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                              </Popover>
-                            </div>
-                            
-                            <div className="space-y-1 flex-1">
-                              <Label className="text-xs text-slate-600">Inner Laminate</Label>
-                              <Popover open={backInnerLaminateOpen} onOpenChange={setBackInnerLaminateOpen}>
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    role="combobox"
-                                    className="w-full justify-between text-xs sm:text-sm h-10 sm:h-9"
-                                  >
-                                    {watchedValues.backPanelInnerLaminateCode || 'Select inner laminate'}
-                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-[300px] p-0">
-                                  <Command>
-                                    <CommandInput placeholder="Type to filter codes..." className="text-xs" />
-                                    <CommandList>
-                                      <CommandEmpty>
-                                        {globalLaminateMemory.length === 0 
-                                          ? 'No saved codes. Add codes in Master Settings.'
-                                          : 'No matching codes found.'}
-                                      </CommandEmpty>
-                                      <CommandGroup>
-                                        {globalLaminateMemory.map((code) => (
-                                          <CommandItem
-                                            key={code}
-                                            value={code}
-                                            onSelect={(currentValue) => {
-                                              updateLaminateWithTracking('backPanelInnerLaminateCode', currentValue, 'user');
-                                              setBackInnerLaminateOpen(false);
-                                            }}
-                                            className="text-xs"
-                                          >
-                                            <Check
-                                              className={`mr-2 h-4 w-4 ${
-                                                watchedValues.backPanelInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                              }`}
-                                            />
-                                            {code}
-                                          </CommandItem>
-                                        ))}
-                                      </CommandGroup>
-                                    </CommandList>
-                                  </Command>
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                          </div>
-                        </div>
-                        </div>
-
-
-                        {/* Shutters Enabled Toggle */}
-                      </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                    {/* Actions */}
-                    <div className="flex items-center justify-end pt-4 border-t border-slate-200">
-                      <div className="flex items-center gap-3">
-                        <div className="flex space-x-2">
-                          <Button type="submit" className="bg-primary-600 hover:bg-primary-700" data-testid="button-add-cabinet">
-                            <i className="fas fa-plus mr-2"></i>
-                            Add Cabinet
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                    </>
-                    )}
-                    
-                    {/* Basic Mode - Quick Shutter */}
-                    {cabinetConfigMode === 'basic' && (
-                    <>
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <Label>Shutter Name</Label>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-600">Gaddi</span>
-                            <Switch
-                              checked={form.watch('shutterGaddi') ?? false}
-                              onCheckedChange={(checked) => form.setValue('shutterGaddi', checked)}
-                              data-testid="toggle-shutter-gaddi"
-                            />
-                          </div>
-                        </div>
-                        <Input
-                          {...form.register('name')}
-                          placeholder="e.g., Kitchen Shutter"
-                          className="text-sm"
-                        />
-                      </div>
-
-                      {/* Quick Shutter Front & Inner Laminates - After Shutter Name */}
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label className="text-xs font-medium">Front Laminate <span className="text-blue-600 font-bold">(M)</span></Label>
-                            <Popover open={basicShutterLaminateOpen} onOpenChange={setBasicShutterLaminateOpen}>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  role="combobox"
-                                  className="w-full justify-between text-sm h-10"
-                                >
-                                  {watchedValues.shutterLaminateCode || 'Select'}
-                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-[300px] p-0">
-                                <Command>
-                                  <CommandInput placeholder="Type to filter codes..." className="text-sm" />
-                                  <CommandList>
-                                    <CommandEmpty>
-                                      {globalLaminateMemory.length === 0 
-                                        ? 'No saved codes. Add codes in Master Settings.'
-                                        : 'No matching codes found.'}
-                                    </CommandEmpty>
-                                    <CommandGroup>
-                                      {globalLaminateMemory.map((code) => (
-                                        <CommandItem
-                                          key={code}
-                                          value={code}
-                                          onSelect={(currentValue) => {
-                                            updateLaminateWithTracking('shutterLaminateCode', currentValue, 'user');
-                                            setBasicShutterLaminateOpen(false);
-                                          }}
-                                          className="text-sm"
-                                        >
-                                          <Check
-                                            className={`mr-2 h-4 w-4 ${
-                                              watchedValues.shutterLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                            }`}
-                                          />
-                                          {code}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label className="text-xs font-medium">Inner Laminate</Label>
-                            <Popover open={basicShutterInnerLaminateOpen} onOpenChange={setBasicShutterInnerLaminateOpen}>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  role="combobox"
-                                  className="w-full justify-between text-sm h-10"
-                                >
-                                  {watchedValues.shutterInnerLaminateCode || 'Select'}
-                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-[300px] p-0">
-                                <Command>
-                                  <CommandInput placeholder="Type to filter codes..." className="text-sm" />
-                                  <CommandList>
-                                    <CommandEmpty>
-                                      {globalLaminateMemory.length === 0 
-                                        ? 'No saved codes. Add codes in Master Settings.'
-                                        : 'No matching codes found.'}
-                                    </CommandEmpty>
-                                    <CommandGroup>
-                                      {globalLaminateMemory.map((code) => (
-                                        <CommandItem
-                                          key={code}
-                                          value={code}
-                                          onSelect={(currentValue) => {
-                                            updateLaminateWithTracking('shutterInnerLaminateCode', currentValue, 'user');
-                                            setBasicShutterInnerLaminateOpen(false);
-                                          }}
-                                          className="text-sm"
-                                        >
-                                          <Check
-                                            className={`mr-2 h-4 w-4 ${
-                                              watchedValues.shutterInnerLaminateCode === code ? 'opacity-100' : 'opacity-0'
-                                            }`}
-                                          />
-                                          {code}
-                                        </CommandItem>
-                                      ))}
-                                    </CommandGroup>
-                                  </CommandList>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <div className="space-y-2 flex-1 min-w-0">
-                          <Label className="text-xs">Height (mm)</Label>
-                          <Input
-                            type="number"
-                            {...form.register('height', { valueAsNumber: true })}
-                            placeholder="2000"
-                            className="text-sm w-full"
-                          />
-                        </div>
-                        <div className="space-y-2 flex-1 min-w-0">
-                          <Label className="text-xs">Width (mm)</Label>
-                          <Input
-                            type="number"
-                            {...form.register('width', { valueAsNumber: true })}
-                            placeholder="600"
-                            className="text-sm w-full"
-                          />
-                        </div>
-                        <div className="space-y-2 flex-1 min-w-0">
-                          <Label className="text-xs">Quantity</Label>
-                          <Input
-                            type="number"
-                            {...form.register('shutterCount', { valueAsNumber: true })}
-                            placeholder="1"
-                            className="text-sm w-full"
-                            min="1"
-                          />
-                        </div>
-                      </div>
-                      
-                      {/* Visual Preview for Quick Shutter */}
-                      {(() => {
-                        const height = form.getValues('height');
-                        const width = form.getValues('width');
-                        const shutterCount = form.getValues('shutterCount');
-                        const shutterLaminate = form.getValues('shutterInnerLaminateCode') || 'Not Set';
-                        return height > 0 && width > 0 && shutterCount > 0 ? (
-                          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                            <div className="text-xs text-blue-700 font-semibold mb-1 text-center">
-                              Quick Shutter Preview
-                            </div>
-                            <div className="text-xs text-blue-600 mb-3 text-center">
-                              Laminate: {shutterLaminate}
-                            </div>
-                            <div className="flex flex-wrap gap-4 justify-center">
-                              {Array.from({ length: shutterCount || 1 }, (_, index) => (
-                                <div key={index} className="relative">
-                                  {/* Height label on top */}
-                                  <div 
-                                    className="absolute -top-5 left-0 text-xs text-blue-600 font-medium"
-                                    style={{
-                                      width: `${(height || 0) * 0.10}px`,
-                                      textAlign: 'center'
-                                    }}
-                                  >
-                                    {height}mm
-                                  </div>
-                                  
-                                  {/* Width label on left */}
-                                  <div 
-                                    className="absolute -left-12 top-0 text-xs text-blue-600 font-medium flex items-center"
-                                    style={{ 
-                                      height: `${(width || 0) * 0.10}px`,
-                                    }}
-                                  >
-                                    {width}mm
-                                  </div>
-                                  
-                                  {/* Shutter Rectangle */}
-                                  <div
-                                    className="bg-blue-100 border-2 border-blue-400 rounded flex items-center justify-center"
-                                    style={{
-                                      width: `${(height || 0) * 0.10}px`,
-                                      height: `${(width || 0) * 0.10}px`,
-                                      minWidth: '80px',
-                                      minHeight: '20px'
-                                    }}
-                                  >
-                                    <span className="text-xs text-blue-700 font-medium">
-                                      #{index + 1}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null;
-                      })()}
-                      
-                      {/* Colour Frame Section */}
-                      <div className="space-y-3 pt-4 border-t border-slate-200">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-sm font-medium">Colour Frame (2400 × 80)</Label>
-                          <Switch
-                            checked={colourFrameEnabled}
-                            onCheckedChange={(checked) => {
-                              setColourFrameEnabled(checked);
-                              if (checked) {
-                                const shutterLaminate = form.getValues('shutterInnerLaminateCode') || '';
-                                const shutterPlywood = form.getValues('A') || 'Apple Ply 16mm BWP';
-                                const shutterGrainDirection = Boolean(form.getValues('shutterGrainDirection'));
-                                setColourFrameForm({
-                                  height: 2400,
-                                  width: 80,
-                                  laminateCode: shutterLaminate,
-                                  quantity: 1,
-                                  note: '',
-                                  customLaminateCode: '',
-                                  A: shutterPlywood,
-                                  grainDirection: shutterGrainDirection
-                                });
-                              }
-                            }}
-                            data-testid="toggle-colour-frame"
-                          />
-                        </div>
-                        
-                        {colourFrameEnabled && (
-                          <div className="space-y-4 pl-4 border-l-2 border-blue-200">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div className="space-y-2">
-                                <Label className="text-sm">Height (mm)</Label>
-                                <Input
-                                  type="number"
-                                  value={colourFrameForm.height}
-                                  onChange={(e) => setColourFrameForm(prev => ({ ...prev, height: parseInt(e.target.value) || 2400 }))}
-                                  className="text-sm"
-                                  data-testid="input-colour-frame-height"
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label className="text-sm">Width (mm)</Label>
-                                <Input
-                                  type="number"
-                                  value={colourFrameForm.width}
-                                  onChange={(e) => setColourFrameForm(prev => ({ ...prev, width: parseInt(e.target.value) || 80 }))}
-                                  className="text-sm"
-                                  data-testid="input-colour-frame-width"
-                                />
                               </div>
                             </div>
-                            
-                            <div className="space-y-2">
-                              <Label className="text-sm">Quantity</Label>
-                              <Input
-                                type="number"
-                                value={colourFrameForm.quantity}
-                                onChange={(e) => setColourFrameForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
-                                className="text-sm"
-                                min="1"
-                                data-testid="input-colour-frame-quantity"
-                              />
-                            </div>
                           </div>
-                        )}
-                      </div>
-                      
-                      {/* Visual Preview for Colour Frame */}
-                      {colourFrameEnabled && colourFrameForm.height > 0 && colourFrameForm.width > 0 && (
-                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                          <div className="text-xs text-blue-700 font-semibold mb-1 text-center">
-                            Colour Frame Preview
-                          </div>
-                          <div className="text-xs text-blue-600 mb-3 text-center">
-                            Laminate: {colourFrameForm.laminateCode || 'Not Set'}
-                          </div>
-                          <div className="flex flex-wrap gap-4 justify-center">
-                            {Array.from({ length: colourFrameForm.quantity || 1 }, (_, index) => (
-                              <div key={index} className="relative">
-                                {/* Height label on top */}
-                                <div 
-                                  className="absolute -top-5 left-0 text-xs text-blue-600 font-medium"
-                                  style={{
-                                    width: `${(colourFrameForm.height || 0) * 0.10}px`,
-                                    textAlign: 'center'
-                                  }}
-                                >
-                                  {colourFrameForm.height}mm
-                                </div>
-                                
-                                {/* Width label on left */}
-                                <div 
-                                  className="absolute -left-12 top-0 text-xs text-blue-600 font-medium flex items-center"
-                                  style={{ 
-                                    height: `${(colourFrameForm.width || 0) * 0.10}px`,
-                                  }}
-                                >
-                                  {colourFrameForm.width}mm
-                                </div>
-                                
-                                {/* Frame Rectangle */}
-                                <div
-                                  className="bg-blue-100 border-2 border-blue-400 rounded flex items-center justify-center"
-                                  style={{
-                                    width: `${(colourFrameForm.height || 0) * 0.10}px`,
-                                    height: `${(colourFrameForm.width || 0) * 0.10}px`,
-                                    minWidth: '80px',
-                                    minHeight: '20px'
-                                  }}
-                                >
-                                  <span className="text-xs text-blue-700 font-medium">
-                                    #{index + 1}
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        </>
                       )}
-                    </div>
-                    
-                    {/* Actions */}
-                    <div className="flex items-center justify-end pt-4 border-t border-slate-200">
-                      <div className="flex items-center gap-3">
-                        <div className="flex space-x-2">
-                          <Button type="submit" className="bg-primary-600 hover:bg-primary-700" data-testid="button-add-shutter">
-                            <i className="fas fa-plus mr-2"></i>
-                            Add Shutter
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                    </>
-                    )}
-                  </form>
-                </Form>
-              </CardContent>
+                    </form>
+                  </Form>
+                </CardContent>
               )}
             </Card>
 
             {/* Preview & Clear Preview Buttons - Outside Cabinet Card */}
-            <div className="flex justify-center gap-2 my-6 px-2">
+            <div className="flex justify-center gap-4 my-6">
               <Button
                 type="button"
                 onClick={() => {
-                  setSpreadsheetVisible(!spreadsheetVisible);
-                  if (!spreadsheetVisible) {
-                    setTimeout(() => {
-                      const spreadsheetSection = document.querySelector('[data-spreadsheet-section]');
-                      if (spreadsheetSection) {
-                        spreadsheetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }
-                    }, 100);
+                  const stored = localStorage.getItem('cutlist_spreadsheet_v1');
+                  if (!stored) {
+                    toast({
+                      title: "No Spreadsheet Data",
+                      description: "Please add rows to the Panel Spreadsheet first.",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+
+                  try {
+                    const data = JSON.parse(stored);
+                    if (!Array.isArray(data) || data.length === 0) {
+                      toast({
+                        title: "No Spreadsheet Data",
+                        description: "Please add rows to the Panel Spreadsheet first.",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+
+                    // Scroll to spreadsheet section
+                    const spreadsheetSection = document.querySelector('[data-spreadsheet-section]');
+                    if (spreadsheetSection) {
+                      spreadsheetSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      toast({
+                        title: "Spreadsheet Ready",
+                        description: "Your spreadsheet data is ready. Edit and customize as needed.",
+                      });
+                    }
+                  } catch (err) {
+                    toast({
+                      title: "Error Loading Data",
+                      description: "Could not load spreadsheet data.",
+                      variant: "destructive"
+                    });
                   }
                 }}
-                className={`${spreadsheetVisible ? 'bg-emerald-700' : 'bg-emerald-600'} hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-full text-sm flex-1 max-w-[130px]`}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-8 py-2 rounded-full text-base"
                 data-testid="button-spreadsheet"
               >
-                <i className={`fas ${spreadsheetVisible ? 'fa-times' : 'fa-table'} mr-1`}></i>
-                {spreadsheetVisible ? 'Hide' : 'Spreadsheet'}
+                <i className="fas fa-cog mr-2"></i>
+                Spreadsheet
               </Button>
               <Button
                 type="button"
@@ -6899,13 +6885,13 @@ export default function Home() {
                 onClick={() => {
                   if (cabinets.length > 0) {
                     setIsOptimizing(true);
-                    
+
                     // Small delay to show "Optimizing..." state before opening dialog
                     setTimeout(() => {
                       setShowPreviewDialog(true);
                       setIsPreviewActive(true);
                       setDeletedPreviewSheets(new Set()); // Reset deleted sheets on new preview
-                      
+
                       // Hide optimization indicator after optimization completes (500ms + 200ms buffer)
                       setTimeout(() => {
                         setIsOptimizing(false);
@@ -6919,18 +6905,18 @@ export default function Home() {
                     });
                   }
                 }}
-                className="font-semibold px-4 py-2 rounded-full text-sm flex-1 max-w-[110px]"
+                className="font-semibold px-8 py-2 rounded-full text-base"
                 data-testid="button-preview-cabinet"
                 disabled={isOptimizing}
               >
                 {isOptimizing ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                    Wait...
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Optimizing...
                   </>
                 ) : (
                   <>
-                    <Eye className="w-4 h-4 mr-1" />
+                    <Eye className="w-4 h-4 mr-2" />
                     Preview
                   </>
                 )}
@@ -6941,11 +6927,11 @@ export default function Home() {
                 onClick={() => {
                   setShowClearConfirmDialog(true);
                 }}
-                className="font-semibold px-4 py-2 rounded-full text-sm flex-1 max-w-[90px]"
+                className="font-semibold px-8 py-2 rounded-full text-base"
                 data-testid="button-clear-preview"
               >
-                <i className="fas fa-eraser mr-1"></i>
-                Clear
+                <i className="fas fa-eraser mr-2"></i>
+                Clear Preview
               </Button>
             </div>
 
@@ -6981,7 +6967,7 @@ export default function Home() {
 
           {/* Right Column - Cabinet List & Summary */}
           <div className="space-y-6">
-            
+
             {/* Quick Stats Overview */}
             {cabinets.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -6998,7 +6984,7 @@ export default function Home() {
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 shadow-lg">
                   <CardContent className="p-4">
                     <div className="flex items-center">
@@ -7012,7 +6998,7 @@ export default function Home() {
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 shadow-lg">
                   <CardContent className="p-4">
                     <div className="flex items-center">
@@ -7026,7 +7012,7 @@ export default function Home() {
                     </div>
                   </CardContent>
                 </Card>
-                
+
                 <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 shadow-lg">
                   <CardContent className="p-4">
                     <div className="flex items-center">
@@ -7044,7 +7030,7 @@ export default function Home() {
                 </Card>
               </div>
             )}
-            
+
             {/* Material Summary Card */}
             {cabinets.length > 0 && (
               <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-300 shadow-xl">
@@ -7112,7 +7098,7 @@ export default function Home() {
                         </div>
                       </div>
                     )}
-                    
+
                     <div className="text-xs text-blue-700 bg-blue-50 p-3 rounded-lg border border-blue-200 flex items-start">
                       <i className="fas fa-info-circle mr-2 mt-0.5"></i>
                       <span>These are optimized estimates based on actual sheet layout. Generate PDF preview for exact counts after optimization.</span>
@@ -7121,7 +7107,7 @@ export default function Home() {
                 </CardContent>
               </Card>
             )}
-            
+
             {/* Cutting List Summary */}
             {cabinets.length > 0 && (
               <Card className="bg-white border-gray-200 shadow-xl">
@@ -7149,7 +7135,7 @@ export default function Home() {
                             {group.panels.length} panels
                           </span>
                         </div>
-                        
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600">
                           <div>
                             <div className="font-medium">Total Area:</div>
@@ -7173,7 +7159,7 @@ export default function Home() {
                         </div>
                       </div>
                     ))}
-                    
+
                     <div className="border-t border-slate-200 pt-3">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                         <div>
@@ -7190,7 +7176,7 @@ export default function Home() {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                       <Button
                         onClick={exportToExcel}
@@ -7252,7 +7238,7 @@ export default function Home() {
                         <i className="fas fa-trash text-sm"></i>
                       </Button>
                     </div>
-                    
+
                     {/* Dimensions & Details */}
                     <div className="text-xs text-slate-500 space-y-1">
                       <div className="font-medium text-slate-700">Dimensions:</div>
@@ -7266,29 +7252,29 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                
+
                 <Button
                   variant="outline"
                   className="w-full mt-4 border-2 border-dashed border-slate-300 text-slate-600 hover:border-slate-400 hover:text-slate-700"
                   onClick={() => {
-                    const mem = loadCabinetFormMemory();
                     form.reset({
                       id: crypto.randomUUID(),
                       name: `Shutter #${cabinets.length + 1}`,
-                      height: mem.height || 800,
-                      width: mem.width || 600,
-                      depth: mem.depth || 450,
+                      height: 800,
+                      width: 600,
+                      depth: 450,
                       shuttersEnabled: false,
                       shutterCount: 1,
                       shutterType: 'Standard',
-                      shutters: [],
-                      A: mem.A || 'Apple Ply 16mm BWP',
-                      backPanelPlywoodBrand: mem.backPanelPlywoodBrand || 'Apple ply 6mm BWP',
-                      topPanelLaminateCode: mem.topPanelLaminateCode || '',
-                      bottomPanelLaminateCode: mem.bottomPanelLaminateCode || '',
-                      leftPanelLaminateCode: mem.leftPanelLaminateCode || '',
-                      rightPanelLaminateCode: mem.rightPanelLaminateCode || '',
-                      backPanelLaminateCode: mem.backPanelLaminateCode || '',
+                      shutters: [
+                        { width: 282, height: 784 },
+                        { width: 282, height: 784 }
+                      ],
+                      topPanelLaminateCode: '',
+                      bottomPanelLaminateCode: '',
+                      leftPanelLaminateCode: '',
+                      rightPanelLaminateCode: '',
+                      backPanelLaminateCode: '',
                       topPanelInnerLaminateCode: 'off white',
                       bottomPanelInnerLaminateCode: 'off white',
                       leftPanelInnerLaminateCode: 'off white',
@@ -7307,7 +7293,7 @@ export default function Home() {
           </div>
         </div>
       </main>
-      
+
       {/* Preview Dialog */}
       <Dialog open={showPreviewDialog} onOpenChange={(open) => {
         setShowPreviewDialog(open);
@@ -7323,34 +7309,34 @@ export default function Home() {
           {cabinets.length > 0 && (() => {
             // Use memoized brandResults to prevent recalculation on every keystroke
             const brandResults = previewBrandResults;
-            
+
             // Sheet dimensions
             const currentSheetWidth = sheetWidth;
             const currentSheetHeight = sheetHeight;
             const currentKerf = kerf;
-            
+
             // Helper function to generate laminate display text
             const getLaminateDisplay = (laminateCode: string): string => {
               if (!laminateCode) return 'None';
               return laminateCode;
             };
-            
+
             // STEP 3: Handle unplaced manual panels (create separate sheets)
             const placedManualPanelIds = new Set<string>(); // Will be empty since manual panels are processed in useMemo
             const unplacedManualPanels = manualPanels.filter(mp => !placedManualPanelIds.has(mp.id));
             if (unplacedManualPanels.length > 0) {
               const unplacedByGroup = unplacedManualPanels.reduce((acc, mp) => {
-                const brand = mp.A;
+                const brand = mp.plywoodType;
                 const laminateCode = mp.laminateCode || '';
-                // ✅ ABC rule: Group by plywood + laminate only (no special back panel separation)
-                const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(laminateCode)}`;
-                if (!acc[groupKey]) acc[groupKey] = { brand, laminateCode, panels: [] };
+                const isBackPanel = mp.targetSheet?.isBackPanel || false;
+                const groupKey = `${normalizeForGrouping(brand)}|||${normalizeForGrouping(laminateCode)}|||${isBackPanel}`;
+                if (!acc[groupKey]) acc[groupKey] = { brand, laminateCode, isBackPanel, panels: [] };
                 acc[groupKey].panels.push(mp);
                 return acc;
-              }, {} as Record<string, { brand: string; laminateCode: string; panels: typeof unplacedManualPanels }>);
-              
+              }, {} as Record<string, { brand: string; laminateCode: string; isBackPanel: boolean; panels: typeof unplacedManualPanels }>);
+
               Object.entries(unplacedByGroup).forEach(([groupKey, group]) => {
-                const manualParts = group.panels.flatMap(mp => 
+                const manualParts = group.panels.flatMap(mp =>
                   Array(mp.quantity).fill(null).map((_, idx) => ({
                     id: `${mp.name} (Manual)`,
                     w: mp.width,
@@ -7364,16 +7350,16 @@ export default function Home() {
                     laminateCode: mp.laminateCode || ''
                   }))
                 );
-                
-                const result = optimizeCutlist({ parts: manualParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: getOptimizationTimeMs(manualParts.length) });
+
+                const result = optimizeCutlist({ parts: manualParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
                 const laminateDisplay = getLaminateDisplay(group.laminateCode);
-                
-                // ✅ ABC rule: All panels follow same grouping (no back panel prefix)
+
+                const prefix = group.isBackPanel ? 'back' : 'regular';
                 if (result?.panels) {
                   result.panels.forEach((sheet: any, sheetIdx: number) => {
-                    sheet._sheetId = `${groupKey}-manual-${sheetIdx}`;
+                    sheet._sheetId = `${prefix}-${groupKey}-manual-${sheetIdx}`;
                     // Restore grain and compute display dims for every placed panel
-                    sheet.placed?.forEach((p: any) => { 
+                    sheet.placed?.forEach((p: any) => {
                       const found = group.panels.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
                       if (found) {
                         p.grainDirection = found.grainDirection ?? null;
@@ -7384,24 +7370,22 @@ export default function Home() {
                     });
                   });
                 }
-                
-                // ✅ ABC rule: isBackPanel determined by panel content, not separate grouping
-                const hasBackPanel = group.panels.some(mp => mp.name.includes('Back Panel'));
-                brandResults.push({ 
-                  brand: group.brand, 
-                  laminateCode: group.laminateCode, 
+
+                brandResults.push({
+                  brand: group.brand,
+                  laminateCode: group.laminateCode,
                   laminateDisplay,
-                  result, 
-                  isBackPanel: hasBackPanel 
+                  result,
+                  isBackPanel: group.isBackPanel
                 });
               });
             }
-            
+
             // STEP 4: Handle Colour Frame (merge with matching plywood + laminate if exists)
             console.log('🎨 STEP 4 Check - colourFrameEnabled:', colourFrameEnabled, 'quantity:', colourFrameForm.quantity);
             if (colourFrameEnabled && colourFrameForm.quantity > 0) {
               console.log('✅ STEP 4 EXECUTING - Processing colour frame');
-              
+
               // Create colour frame parts
               const colourFrameParts = Array(colourFrameForm.quantity).fill(null).map((_, idx) => ({
                 id: `Colour Frame (${idx + 1})`,
@@ -7415,18 +7399,18 @@ export default function Home() {
                 grainDirection: colourFrameForm.grainDirection,
                 laminateCode: colourFrameForm.laminateCode || ''
               }));
-              
+
               // Find matching brandResult (same plywood + laminates)
-              const matchingBrandIdx = brandResults.findIndex(br => 
-                br.brand === colourFrameForm.A && 
+              const matchingBrandIdx = brandResults.findIndex(br =>
+                br.brand === colourFrameForm.plywoodType &&
                 br.laminateCode === (colourFrameForm.laminateCode || '')
               );
-              
+
               if (matchingBrandIdx !== -1) {
                 // Merge with existing result
                 console.log('✅ Colour Frame MERGED with existing sheet');
                 const existingBrand = brandResults[matchingBrandIdx];
-                
+
                 // Re-optimize both sets of parts together
                 // Filter out old colour frame parts to prevent duplication on re-render
                 const allParts = [
@@ -7446,14 +7430,14 @@ export default function Home() {
                     })) || []),
                   ...colourFrameParts
                 ];
-                
-                const mergedResult = optimizeCutlist({ parts: allParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: getOptimizationTimeMs(allParts.length) });
-                
+
+                const mergedResult = optimizeCutlist({ parts: allParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
+
                 if (mergedResult?.panels) {
                   mergedResult.panels.forEach((sheet: any, sheetIdx: number) => {
-                    sheet._sheetId = `${normalizeForGrouping(colourFrameForm.A)}|||${normalizeForGrouping(colourFrameForm.laminateCode)}-${sheetIdx}`;
+                    sheet._sheetId = `${normalizeForGrouping(colourFrameForm.plywoodType)}|||${normalizeForGrouping(colourFrameForm.laminateCode)}-${sheetIdx}`;
                     // Restore grain and compute display dims for every placed panel
-                    sheet.placed?.forEach((p: any) => { 
+                    sheet.placed?.forEach((p: any) => {
                       const found = allParts.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
                       if (found) {
                         p.grainDirection = found.grainDirection ?? null;
@@ -7464,7 +7448,7 @@ export default function Home() {
                     });
                   });
                 }
-                
+
                 // Update the existing brandResult with merged data
                 brandResults[matchingBrandIdx] = {
                   ...existingBrand,
@@ -7473,13 +7457,13 @@ export default function Home() {
               } else {
                 // Create new entry if no match
                 console.log('✅ Colour Frame created NEW sheet (no matching plywood/laminate)');
-                const colourFrameResult = optimizeCutlist({ parts: colourFrameParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: getOptimizationTimeMs(colourFrameParts.length) });
+                const colourFrameResult = optimizeCutlist({ parts: colourFrameParts, sheet: { w: currentSheetWidth, h: currentSheetHeight, kerf: currentKerf }, timeMs: 500 });
                 const colourFrameLaminateDisplay = getLaminateDisplay(colourFrameForm.laminateCode);
-                
+
                 if (colourFrameResult?.panels) {
                   colourFrameResult.panels.forEach((sheet: any, sheetIdx: number) => {
                     sheet._sheetId = `colour-frame-${sheetIdx}`;
-                    sheet.placed?.forEach((p: any) => { 
+                    sheet.placed?.forEach((p: any) => {
                       const found = colourFrameParts.find(gp => String(gp.id) === String(p.id) || String(gp.id) === String(p.origId));
                       if (found) {
                         p.grainDirection = found.grainDirection ?? null;
@@ -7490,38 +7474,38 @@ export default function Home() {
                     });
                   });
                 }
-                
-                brandResults.push({ 
-                  brand: colourFrameForm.A,
+
+                brandResults.push({
+                  brand: colourFrameForm.plywoodType,
                   laminateCode: colourFrameForm.laminateCode || '',
                   laminateDisplay: colourFrameLaminateDisplay,
-                  result: colourFrameResult, 
-                  isBackPanel: false 
+                  result: colourFrameResult,
+                  isBackPanel: false
                 });
               }
             } else {
               console.log('❌ STEP 4 SKIPPED - colourFrameEnabled is false or quantity is 0');
             }
-            
+
             // Helper to render a sheet
             const renderSheet = (sheetData: any, title: string, brand: string, laminateDisplay: string, isBackPanel: boolean, sheetId: string, pageNumber: number) => {
               if (!sheetData || !sheetData.placed || sheetData.placed.length === 0) return null;
-              
+
               // Skip if deleted
               if (deletedPreviewSheets.has(sheetId)) return null;
-              
+
               // Calculate scale to fit in preview (portrait orientation)
               const containerHeight = 800; // px
               const scale = containerHeight / currentSheetHeight; // scale based on sheet height
               const scaledWidth = currentSheetWidth * scale; // sheet width
-              
+
               const handleDelete = () => {
                 setDeletedPreviewSheets(prev => new Set([...Array.from(prev), sheetId]));
               };
-              
+
               // Laminate code font size
               const laminateFontSize = 'text-xs';
-              
+
               return (
                 <div className="bg-white border-2 border-black p-4 mb-6 relative" style={{ display: 'block', width: '100%' }}>
                   {/* Header */}
@@ -7545,7 +7529,7 @@ export default function Home() {
                         const parts = laminateDisplay.split(' + ');
                         const frontLaminate = parts[0] || 'None';
                         const innerLaminate = parts[1] || parts[0] || 'None';
-                        
+
                         return (
                           <>
                             <p className={`font-normal whitespace-nowrap ${laminateFontSize}`}>Front Laminate: {frontLaminate}</p>
@@ -7555,7 +7539,7 @@ export default function Home() {
                       })()}
                     </div>
                   </div>
-                  
+
                   {/* Create panel summary first (group by nominal size for letter codes) */}
                   {(() => {
                     const panelSummary: { [key: string]: { letterCode: string; count: number; width: number; height: number } } = {};
@@ -7577,7 +7561,7 @@ export default function Home() {
                       }
                       const sizeKey = `${Math.round(panelW)}x${Math.round(panelH)}`;
                       console.log(`       rotate=${p.rotate}, sizeKey="${sizeKey}"`);
-                      
+
                       if (!panelSummary[sizeKey]) {
                         panelSummary[sizeKey] = {
                           letterCode: String.fromCharCode(65 + uniqueSizeIndex),
@@ -7617,13 +7601,13 @@ export default function Home() {
                           </div>
 
                           {/* Sheet Layout - Portrait Orientation */}
-                          <div 
+                          <div
                             className="relative bg-gray-50 border-2 border-black"
                             style={{ width: `${scaledWidth}px`, height: `${containerHeight}px` }}
                           >
                             {/* Simple Grain Direction Arrow - Left Bottom - Only for sheets with wood grains enabled */}
                             {sheetData.placed.some((p: any) => p.grainDirection === true && p.laminateCode && p.laminateCode.trim() !== '') && (
-                              <div 
+                              <div
                                 className="absolute left-2 bottom-2 flex items-center gap-1 bg-white border border-black px-2 py-1 rounded"
                                 style={{ fontSize: '10px' }}
                               >
@@ -7634,80 +7618,37 @@ export default function Home() {
                                 <span className="font-bold">Grain</span>
                               </div>
                             )}
-                          
+
                             {(() => {
                               console.group('🔍 WOOD GRAIN RENDER TEST - Panel Rendering');
                               return sheetData.placed.map((panel: any, idx: number) => {
                                 const { displayW, displayH } = getDisplayDims(panel);
                                 const panelUniqueId = `${sheetId}-${panel.id}`;
-                                
+
                                 if (deletedPreviewPanels.has(panelUniqueId)) {
                                   return null;
                                 }
-                                
+
                                 const x = panel.x * scale;
                                 const y = panel.y * scale;
                                 const w = panel.w * scale;
                                 const h = panel.h * scale;
-                                
-                                // Use panel.name for detection (has actual names like "Cabinet - Shutter 1")
-                                // Fallback to panel.id if name not available
-                                const nameSource = (panel.name || panel.id || '').toUpperCase();
-                                const idSource = (panel.id || '').toUpperCase();
-                                
-                                // ✅ FIXED: Determine panel type FIRST before checking for shutter label
-                                // Panel names can be: "Shutter #1 - Top" OR "Shutter #1-TOP-grain-false"
-                                // Check for both formats: " - TYPE" and "-TYPE-" patterns
-                                
-                                const isTopPanel = nameSource.includes(' - TOP') || nameSource.includes('-TOP-') || nameSource.includes('-TOP::');
-                                const isBottomPanel = nameSource.includes(' - BOTTOM') || nameSource.includes('-BOTTOM-') || nameSource.includes('-BOTTOM::');
-                                const isLeftPanel = nameSource.includes(' - LEFT') || nameSource.includes('-LEFT-') || nameSource.includes('-LEFT::');
-                                const isRightPanel = nameSource.includes(' - RIGHT') || nameSource.includes('-RIGHT-') || nameSource.includes('-RIGHT::');
-                                const isBackPanel = nameSource.includes(' - BACK') || nameSource.includes('-BACK-') || nameSource.includes('-BACK::') || nameSource.includes('BACK PANEL');
-                                const isCenterPost = nameSource.includes('CENTER POST');
-                                const isShelf = nameSource.includes('SHELF');
-                                
-                                // Only check for shutter label if it's actually a shutter panel (contains " - SHUTTER")
-                                let shutterLabel: string | null = null;
-                                const isActualShutterPanel = nameSource.includes(' - SHUTTER') || idSource.match(/^SHUTTER_\d+_/);
-                                
-                                if (isActualShutterPanel) {
-                                  // Check if ID starts with SHUTTER_ (from optimizer)
-                                  const idShutterMatch = idSource.match(/^SHUTTER_(\d+)_/);
-                                  if (idShutterMatch) {
-                                    shutterLabel = `SHUTTER ${idShutterMatch[1]}`;
-                                  } else if (panel.shutterLabel) {
-                                    shutterLabel = panel.shutterLabel;
-                                  } else {
-                                    const nameShutterMatch = (panel.name || '').match(/- Shutter\s*(\d+)/i);
-                                    if (nameShutterMatch) {
-                                      shutterLabel = `SHUTTER ${nameShutterMatch[1]}`;
-                                    } else {
-                                      shutterLabel = 'SHUTTER';
-                                    }
-                                  }
-                                }
-                                
-                                // ✅ Panel name: Check specific types FIRST, then shutter
-                                const panelName = isCenterPost ? 'CENTER POST' :
-                                                 isShelf ? 'SHELF' :
-                                                 isTopPanel ? 'TOP' :
-                                                 isBottomPanel ? 'BOTTOM' :
-                                                 isLeftPanel ? 'LEFT' :
-                                                 isRightPanel ? 'RIGHT' :
-                                                 isBackPanel ? 'BACK' :
-                                                 shutterLabel ? shutterLabel :
-                                                 panel.id;
-                                
-                                // Check if this is a shutter panel for intelligent positioning
-                                const isShutterPanel = !!shutterLabel;
-                                
+
+                                const panelName = panel.id.toUpperCase().includes('CENTER POST') ? 'CENTER POST' :
+                                  panel.id.toUpperCase().includes('SHELF') ? 'SHELF' :
+                                    panel.id.toUpperCase().includes('LEFT') ? 'LEFT' :
+                                      panel.id.toUpperCase().includes('RIGHT') ? 'RIGHT' :
+                                        panel.id.toUpperCase().includes('TOP') ? 'TOP' :
+                                          panel.id.toUpperCase().includes('BOTTOM') ? 'BOTTOM' :
+                                            panel.id.toUpperCase().includes('BACK') ? 'BACK' :
+                                              panel.id;
+
                                 const isGaddi = panel.gaddi === true;
-                                
+
                                 // ✅ CRITICAL: Use computed display dimensions (X/Y based on panel type)
                                 const showW = panel.displayWidth ?? displayW;
                                 const showH = panel.displayHeight ?? displayH;
-                                
+
                                 console.log(`  Panel[${idx}] ${panelName}:`);
                                 console.log(`    - grainDirection: ${panel.grainDirection} (RESTORED: ${panel.grainDirection === true ? '✅' : '❌'})`);
                                 console.log(`    - rotate: ${panel.rotate} (SHOULD BE FALSE for grain=true)`);
@@ -7720,7 +7661,7 @@ export default function Home() {
                                   console.log(`    - LEFT/RIGHT CHECK: Showing nomW=${showW} on X-axis (depth), nomH=${showH} on Y-axis (height) ✅`);
                                 }
                                 console.log(`    - Verdict: ${panel.grainDirection && panel.rotate === false ? '✅ CORRECT' : '❌ ERROR'}`);
-                                
+
                                 return (
                                   <div
                                     key={idx}
@@ -7732,40 +7673,37 @@ export default function Home() {
                                       height: `${h}px`
                                     }}
                                   >
-                                    {/* Only show panel name on panels >= 200mm in both dimensions */}
+                                    {/* Only show panel name and dimensions on panels >= 200mm in both dimensions */}
                                     {panel.w >= 200 && panel.h >= 200 && (
                                       <>
-                                        {/* Panel name - Smart positioning for SHUTTER panels */}
-                                        {isShutterPanel ? (
-                                          // SHUTTER label: horizontal text on Y-axis (left side), at bottom
-                                          <p 
-                                            className="absolute font-bold uppercase text-slate-700"
-                                            style={{
-                                              left: '4px',
-                                              bottom: '4px',
-                                              fontSize: `${Math.max(9, Math.min(14, Math.min(w, h) / 8))}px`
-                                            }}
-                                          >
-                                            {panelName}
-                                          </p>
-                                        ) : (
-                                          // Other panels: standard bottom center positioning
-                                          <p 
-                                            className="absolute font-bold uppercase"
-                                            style={{
-                                              left: '50%',
-                                              bottom: '2px',
-                                              transform: 'translateX(-50%)',
-                                              fontSize: `${Math.max(9, Math.min(16, w / 10, h / 6))}px`
-                                            }}
-                                          >
-                                            {panelName}
-                                          </p>
-                                        )}
-                                        
+                                        {/* Dimensions - Top Right - Responsive font size with padding to avoid overlap */}
+                                        <p
+                                          className="absolute font-semibold"
+                                          style={{
+                                            right: '8px',
+                                            top: '4px',
+                                            fontSize: `${Math.max(8, Math.min(14, w / 12, h / 8))}px`
+                                          }}
+                                        >
+                                          {Math.round(showW)}×{Math.round(showH)}
+                                        </p>
+
+                                        {/* Panel name - Bottom Center - Responsive font size */}
+                                        <p
+                                          className="absolute font-bold uppercase"
+                                          style={{
+                                            left: '50%',
+                                            bottom: '2px',
+                                            transform: 'translateX(-50%)',
+                                            fontSize: `${Math.max(9, Math.min(16, w / 10, h / 6))}px`
+                                          }}
+                                        >
+                                          {panelName}
+                                        </p>
+
                                         {/* Wood Grain Indicator - Only when wood grains enabled - Bottom Center, above panel name */}
                                         {panel.grainDirection === true && (
-                                          <div 
+                                          <div
                                             className="absolute flex items-center gap-0.5"
                                             style={{
                                               left: '50%',
@@ -7778,167 +7716,154 @@ export default function Home() {
                                         )}
                                       </>
                                     )}
-                                    {/* Letter Code - Smart positioning based on GADDI presence and panel size */}
+                                    {/* Letter Code - ALWAYS visible on all panels */}
                                     {(() => {
                                       const sizeKey = `${Math.round(showW)}x${Math.round(showH)}`;
                                       const letterCode = panelSummary[sizeKey]?.letterCode || 'X';
-                                      
-                                      // Size-based layout tiers
-                                      const isSmallPanel = w < 60 || h < 60;
-                                      const isMediumPanel = (w >= 60 && w < 100) || (h >= 60 && h < 100);
-                                      
-                                      // Adjust font size based on panel size
-                                      let fontSize;
-                                      if (isSmallPanel) {
-                                        fontSize = Math.max(10, Math.min(20, w / 4, h / 3));
-                                      } else if (isMediumPanel) {
-                                        fontSize = Math.max(12, Math.min(32, w / 3.5, h / 2.5));
-                                      } else {
-                                        fontSize = Math.max(12, Math.min(48, w / 3, h / 2));
-                                      }
-                                      
-                                      // Move to top-right corner when GADDI is present OR panel is small
-                                      const moveToCorner = isGaddi || isSmallPanel;
-                                      
+                                      const fontSize = Math.max(12, Math.min(48, w / 3, h / 2));
+
                                       return (
-                                        <p 
-                                          className="absolute font-extrabold"
-                                          style={moveToCorner ? {
-                                            right: '4px',
-                                            top: '2px',
-                                            fontSize: `${fontSize}px`,
-                                            color: '#374151'
-                                          } : {
+                                        <p
+                                          className="absolute font-bold text-gray-200"
+                                          style={{
                                             left: '50%',
                                             top: '50%',
                                             transform: 'translate(-50%, -50%)',
-                                            fontSize: `${fontSize}px`,
-                                            color: '#374151'
+                                            fontSize: `${fontSize}px`
                                           }}
                                         >
                                           {letterCode}
                                         </p>
                                       );
                                     })()}
-                                    
-                                    {/* GADDI Dotted Line + Text - Red marking for nomW (TOP/BOTTOM) or nomH (LEFT/RIGHT) */}
-                                    {isGaddi && (() => {
-                                      const type = panelName.toUpperCase();
-                                      const isLeftRight = type.includes('LEFT') || type.includes('RIGHT');
-                                      const isTopBottom = type.includes('TOP') || type.includes('BOTTOM');
-                                      
-                                      if (!isLeftRight && !isTopBottom) return null;
-                                      
-                                      // For both panel types: check where the dimension is placed
-                                      // TOP/BOTTOM: width placement
-                                      // LEFT/RIGHT: height placement
-                                      const dimensionOnXAxis = w >= h;
-                                      const drawHorizontal = dimensionOnXAxis;
-                                      
-                                      // Always show full "GADDI" text, adjust size based on panel
-                                      const isSmallPanel = w < 60 || h < 60;
-                                      const gaddiText = 'GADDI';
-                                      const textSize = isSmallPanel ? 'text-[6px]' : 'text-[8px]';
-                                      
+
+                                    {/* GADDI Label - Very close to dotted line */}
+                                    {isGaddi && w > 30 && h > 20 && (() => {
+                                      const gaddiPanel = {
+                                        panelType: panelName as any,
+                                        gaddi: true,
+                                        nomW: panel.nomW ?? panel.w,
+                                        nomH: panel.nomH ?? panel.h,
+                                        w: panel.w,
+                                        h: panel.h
+                                      };
+
+                                      if (!shouldShowGaddiMarking(gaddiPanel)) {
+                                        return null;
+                                      }
+
+                                      const lineConfig = calculateGaddiLineDirection(gaddiPanel);
+                                      const gaddiFontSize = Math.max(7, Math.min(12, w / 15, h / 12));
+                                      const labelStyle = lineConfig.sheetAxis === 'x'
+                                        ? { top: '4px', left: '6px', fontSize: `${gaddiFontSize}px` }
+                                        : { left: '4px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', transformOrigin: 'center', fontSize: `${gaddiFontSize}px` };
+
                                       return (
-                                        <>
-                                          {/* Dotted Line */}
-                                          <div 
-                                            className="absolute"
-                                            style={{ 
-                                              left: '2px',
-                                              top: '2px',
-                                              right: drawHorizontal ? '2px' : 'auto',
-                                              bottom: !drawHorizontal ? '2px' : 'auto',
-                                              width: drawHorizontal ? 'calc(100% - 4px)' : '0px',
-                                              height: !drawHorizontal ? 'calc(100% - 4px)' : '0px',
-                                              borderTop: drawHorizontal ? '2px dotted #FF0000' : 'none',
-                                              borderLeft: !drawHorizontal ? '2px dotted #FF0000' : 'none'
-                                            }}
-                                            title={`GADDI: Mark ${isLeftRight ? 'Height (nomH)' : 'Width (nomW)'}`}
-                                          />
-                                          {/* GADDI Text Label - smart sizing based on panel size */}
-                                          {drawHorizontal ? (
-                                            // Horizontal line (X-axis): text on the LEFT, inside panel with 11px gap
-                                            <div
-                                              className={`absolute ${textSize} font-bold text-black`}
-                                              style={{
-                                                left: '6px',
-                                                top: '13px'
-                                              }}
-                                            >
-                                              {gaddiText}
-                                            </div>
-                                          ) : (
-                                            // Vertical line (Y-axis): text at BOTTOM, inside panel with 15px gap from line
-                                            <div
-                                              className={`absolute ${textSize} font-bold text-black`}
-                                              style={{
-                                                left: '17px',
-                                                bottom: '6px',
-                                                transform: 'rotate(-90deg)',
-                                                transformOrigin: 'left bottom',
-                                                whiteSpace: 'nowrap'
-                                              }}
-                                            >
-                                              {gaddiText}
-                                            </div>
-                                          )}
-                                        </>
+                                        <p
+                                          className="absolute font-bold text-gray-700"
+                                          style={labelStyle}
+                                        >
+                                          GADDI
+                                        </p>
                                       );
                                     })()}
-                                    
+
+                                    {/* GADDI Dotted Lines */}
+                                    {isGaddi && (() => {
+                                      const gaddiPanel = {
+                                        panelType: panelName as any,
+                                        gaddi: true,
+                                        nomW: panel.nomW ?? panel.w,
+                                        nomH: panel.nomH ?? panel.h,
+                                        w: panel.w,
+                                        h: panel.h
+                                      };
+
+                                      if (!shouldShowGaddiMarking(gaddiPanel)) {
+                                        return null;
+                                      }
+
+                                      const lineConfig = calculateGaddiLineDirection(gaddiPanel);
+
+                                      if (lineConfig.sheetAxis === 'x') {
+                                        return (
+                                          <div
+                                            className="absolute"
+                                            style={{
+                                              left: '4px',
+                                              top: '4px',
+                                              right: '4px',
+                                              height: '0',
+                                              borderTop: '2px dotted #666'
+                                            }}
+                                          />
+                                        );
+                                      } else {
+                                        return (
+                                          <div
+                                            className="absolute"
+                                            style={{
+                                              left: '4px',
+                                              top: '4px',
+                                              bottom: '4px',
+                                              width: '0',
+                                              borderLeft: '2px dotted #666'
+                                            }}
+                                          />
+                                        );
+                                      }
+                                    })()}
                                   </div>
                                 );
                               });
                             })()}
-                            </div>
+                          </div>
                         </div>
-                        
+
                         <div className="mt-2 text-xs text-gray-600 border-t pt-2">
                           <p>Total Panels: {sheetData.placed.length}</p>
                         </div>
-                        
+
                         {/* Action Buttons at Bottom */}
                         <div className="mt-4 flex justify-center gap-3 hide-for-export">
-                    <button
-                      onClick={() => {
-                        // Extract laminate code from the sheet
-                        const firstPanel = sheetData.placed[0];
-                        let laminateCode = '';
-                        
-                        if (firstPanel && firstPanel.metadata) {
-                          laminateCode = firstPanel.metadata.laminateCode || '';
-                        }
-                        
-                        // Set the sheet context with unique sheet ID
-                        setSelectedSheetContext({
-                          brand,
-                          laminateCode,
-                          isBackPanel,
-                          sheetId
-                        });
-                        
-                        // Pre-fill form with sheet's properties
-                        setManualPanelForm({
-                          name: 'Manual Panel',
-                          height: '',
-                          width: '',
-                          laminateCode,
-                          A: brand,
-                          quantity: 1,
-                          grainDirection: false,
-                          gaddi: false
-                        });
-                        
-                        // Open the dialog
-                        setShowManualPanelDialog(true);
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-bold shadow-md transition-colors"
-                      data-testid={`button-add-panel-${sheetId}`}
-                    >
-                      + Add Panel
-                    </button>
+                          <button
+                            onClick={() => {
+                              // Extract laminate code from the sheet
+                              const firstPanel = sheetData.placed[0];
+                              let laminateCode = '';
+
+                              if (firstPanel && firstPanel.metadata) {
+                                laminateCode = firstPanel.metadata.laminateCode || '';
+                              }
+
+                              // Set the sheet context with unique sheet ID
+                              setSelectedSheetContext({
+                                brand,
+                                laminateCode,
+                                isBackPanel,
+                                sheetId
+                              });
+
+                              // Pre-fill form with sheet's properties
+                              setManualPanelForm({
+                                name: 'Manual Panel',
+                                height: '',
+                                width: '',
+                                laminateCode,
+                                plywoodType: brand,
+                                quantity: 1,
+                                grainDirection: false,
+                                gaddi: false
+                              });
+
+                              // Open the dialog
+                              setShowManualPanelDialog(true);
+                            }}
+                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-bold shadow-md transition-colors"
+                            data-testid={`button-add-panel-${sheetId}`}
+                          >
+                            + Add Panel
+                          </button>
                           <button
                             onClick={handleDelete}
                             className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded font-bold shadow-md transition-colors"
@@ -7947,7 +7872,7 @@ export default function Home() {
                             Delete Page
                           </button>
                         </div>
-                        
+
                         {/* Page Number */}
                         <div className="text-sm font-semibold text-gray-700 mt-4 text-right">
                           Page {pageNumber} of {totalPages}
@@ -7958,13 +7883,13 @@ export default function Home() {
                 </div>
               );
             };
-            
+
             // Calculate material summary (grouped by plywood brand + laminate)
             const materialSummary = brandResults.reduce((acc, brandResult) => {
               const sheets = brandResult.result?.panels || [];
               const nonDeletedSheets = sheets.filter((sheet: any) => !deletedPreviewSheets.has(sheet._sheetId || `fallback-${brandResults.indexOf(brandResult)}-${sheets.indexOf(sheet)}`));
               const sheetCount = nonDeletedSheets.length;
-              
+
               if (sheetCount > 0) {
                 const key = `${brandResult.brand}|||${brandResult.laminateDisplay}`;
                 if (!acc[key]) {
@@ -7976,22 +7901,22 @@ export default function Home() {
                 }
                 acc[key].count += sheetCount;
               }
-              
+
               return acc;
             }, {} as Record<string, { brand: string; laminateDisplay: string; count: number }>);
-            
+
             // Calculate laminate summary (count sheets needed to laminate plywood sheets)
             // NOTE: Laminate sheets are the SAME SIZE as plywood sheets
             // Each plywood sheet needs laminate on both faces (front + inner)
             const laminateSummary = brandResults.reduce((acc, brandResult) => {
               const sheets = brandResult.result?.panels || [];
-              
+
               // Count non-deleted PLYWOOD SHEETS (not panels!)
               const plywoodSheetCount = sheets.filter((sheet: any) => {
                 const sheetId = sheet._sheetId || `fallback-${brandResults.indexOf(brandResult)}-${sheets.indexOf(sheet)}`;
                 return !deletedPreviewSheets.has(sheetId);
               }).length;
-              
+
               if (plywoodSheetCount > 0) {
                 // Split laminate code to get front AND inner laminates
                 const laminateDisplay = brandResult.laminateDisplay;
@@ -7999,7 +7924,7 @@ export default function Home() {
                   .split('+')
                   .map(part => part.trim())
                   .filter(part => part && part !== 'None' && !part.match(/^Backer$/i));
-                
+
                 // Each plywood sheet needs 1 laminate sheet for front face + 1 for inner face
                 laminateParts.forEach(laminate => {
                   if (!acc[laminate]) {
@@ -8008,46 +7933,46 @@ export default function Home() {
                   acc[laminate] += plywoodSheetCount; // Add plywood sheet count, not panel count!
                 });
               }
-              
+
               return acc;
             }, {} as Record<string, number>);
-            
+
             // Calculate total panels
             console.log('🔍 Summary Page - brandResults count:', brandResults.length);
             console.log('🔍 Summary Page - brandResults:', brandResults.map(br => ({ brand: br.brand, sheetsCount: br.result?.panels?.length || 0 })));
-            
+
             const totalPanels = brandResults.reduce((total, brandResult) => {
               const sheets = brandResult.result?.panels || [];
               console.log(`📊 Processing brandResult: ${brandResult.brand}, sheets count: ${sheets.length}`);
-              
+
               const brandTotal = sheets.reduce((sheetTotal: number, sheet: any, sheetIdx: number) => {
                 const sheetId = sheet._sheetId || `fallback-${brandResults.indexOf(brandResult)}-${sheets.indexOf(sheet)}`;
                 const isDeleted = deletedPreviewSheets.has(sheetId);
                 console.log(`  Sheet ${sheetIdx}: sheetId="${sheetId}", deleted=${isDeleted}`);
-                
+
                 if (isDeleted) return sheetTotal;
-                
+
                 const placed = sheet.placed || [];
                 console.log(`  Sheet ${sheetIdx}: placed panels count = ${placed.length}`);
-                
+
                 const nonDeletedPanels = placed.filter((panel: any) => {
                   const panelUniqueId = `${sheetId}-${panel.id}`;
                   return !deletedPreviewPanels.has(panelUniqueId);
                 });
                 console.log(`  Sheet ${sheetIdx}: non-deleted panels count = ${nonDeletedPanels.length}`);
-                
+
                 return sheetTotal + nonDeletedPanels.length;
               }, 0);
-              
+
               console.log(`📊 Brand "${brandResult.brand}" total panels: ${brandTotal}`);
               return total + brandTotal;
             }, 0);
-            
+
             console.log('🎯 FINAL totalPanels:', totalPanels);
-            
+
             // Get unique room names
             const roomNames = Array.from(new Set(cabinets.map(c => c.roomName).filter((r): r is string => Boolean(r))));
-            
+
             // Calculate total pages for page numbering (only cutting sheets, NOT summary page)
             const totalPages = brandResults.reduce((total, br) => {
               const sheets = br.result?.panels || [];
@@ -8056,7 +7981,7 @@ export default function Home() {
                 return s.placed && s.placed.length > 0 && !deletedPreviewSheets.has(sheetId);
               }).length;
             }, 0);
-            
+
             return (
               <>
                 <div id="pdf-preview" className="space-y-6">
@@ -8068,7 +7993,7 @@ export default function Home() {
                         <h1 className="text-2xl font-bold">Maya Interiors</h1>
                         <h2 className="text-lg text-gray-700">Cutting List Summary</h2>
                       </div>
-                      
+
                       {/* Project Details - All in Single Row */}
                       <div className="border-b border-black pb-2">
                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
@@ -8083,7 +8008,7 @@ export default function Home() {
                           <span><span className="font-semibold">Total Panels:</span> <span className="font-bold text-green-600">{totalPanels}</span></span>
                         </div>
                       </div>
-                      
+
                       {/* Material Summary */}
                       <div className="space-y-1">
                         <h3 className="text-lg font-bold border-b border-black pb-1">Material Summary</h3>
@@ -8092,7 +8017,7 @@ export default function Home() {
                             const parts = item.laminateDisplay.split(' + ');
                             const frontLaminate = parts[0] || 'None';
                             const innerLaminate = parts[1] || parts[0] || 'None';
-                            
+
                             return (
                               <div key={idx} className="text-sm">
                                 <span className="font-semibold">{item.brand}</span>
@@ -8103,7 +8028,7 @@ export default function Home() {
                           })}
                         </div>
                       </div>
-                      
+
                       {/* Laminate Summary - Grouped by Laminate Code Only */}
                       <div className="space-y-1">
                         <h3 className="text-lg font-bold border-b border-black pb-1">Laminate Summary</h3>
@@ -8118,7 +8043,7 @@ export default function Home() {
                             ))}
                         </div>
                       </div>
-                      
+
                       {/* Colour Frame Summary */}
                       {colourFrameEnabled && (
                         <div className="space-y-1">
@@ -8131,7 +8056,7 @@ export default function Home() {
                           </div>
                         </div>
                       )}
-                      
+
                       {/* Footer */}
                       <div className="mt-auto pt-8 border-t border-gray-300 text-sm text-gray-500">
                         <div className="flex justify-between items-center">
@@ -8146,25 +8071,25 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* Render sheets for each brand */}
                   {(() => {
                     let currentPage = 0; // Start at 0 so first sheet is Page 1 (not Page 2)
                     return brandResults.flatMap((brandResult, brandIdx) => {
                       const sheets = brandResult.result?.panels || [];
-                      
+
                       return sheets.map((sheet: any, idx: number) => {
                         // Use the stable sheet ID assigned during optimization
                         const sheetId = sheet._sheetId || `fallback-${brandIdx}-${idx}`;
-                        
+
                         // Skip deleted sheets but don't count them in page numbering
                         if (deletedPreviewSheets.has(sheetId)) return null;
-                        
+
                         currentPage++; // Increment page number for each visible sheet (starts at 1)
-                        const title = brandResult.isBackPanel 
-                          ? `Back Panel Sheet - ${brandResult.brand}` 
+                        const title = brandResult.isBackPanel
+                          ? `Back Panel Sheet - ${brandResult.brand}`
                           : `Sheet - ${brandResult.brand}`;
-                        
+
                         return (
                           <div key={sheetId} className="cutting-sheet" style={{ display: 'block', width: '100%', pageBreakAfter: 'always' }}>
                             {renderSheet(sheet, title, brandResult.brand, brandResult.laminateDisplay, brandResult.isBackPanel, sheetId, currentPage)}
@@ -8174,7 +8099,7 @@ export default function Home() {
                     });
                   })()}
                 </div>
-                
+
                 {/* Export PDF Button - Pixel-perfect DOM capture */}
                 <div className="flex justify-center pt-6 pb-2">
                   <Button
@@ -8189,13 +8114,13 @@ export default function Home() {
                         });
                         return;
                       }
-                      
+
                       try {
                         await exportPreviewToPdf({
                           filename: `cutting-list-${new Date().toISOString().slice(0, 10)}.pdf`,
                           pdfOrientation: "portrait"
                         });
-                        
+
                         toast({
                           title: "PDF Generated",
                           description: "One sheet per page - pixel-perfect copy of your preview"
@@ -8296,8 +8221,8 @@ export default function Home() {
             <div className="space-y-1">
               <Label className="text-sm">Plywood Type</Label>
               <Select
-                value={manualPanelForm.A}
-                onValueChange={(value) => setManualPanelForm(prev => ({ ...prev, A: value }))}
+                value={manualPanelForm.plywoodType}
+                onValueChange={(value) => setManualPanelForm(prev => ({ ...prev, plywoodType: value }))}
               >
                 <SelectTrigger data-testid="select-manual-panel-plywood" className="h-9">
                   <SelectValue />
@@ -8370,11 +8295,11 @@ export default function Home() {
                   const nameInput = document.getElementById('manual-panel-name-input') as HTMLInputElement;
                   const heightInput = document.getElementById('manual-panel-height-input') as HTMLInputElement;
                   const widthInput = document.getElementById('manual-panel-width-input') as HTMLInputElement;
-                  
+
                   const name = nameInput?.value || 'Manual Panel';
                   const height = parseInt(heightInput?.value || '0');
                   const width = parseInt(widthInput?.value || '0');
-                  
+
                   if (!height || height <= 0 || !width || width <= 0) {
                     toast({
                       title: "Invalid Dimensions",
@@ -8383,18 +8308,18 @@ export default function Home() {
                     });
                     return;
                   }
-                  
+
                   // ✅ DIRECT LINK: Compute grain direction from database preferences
                   const baseLaminateCode = (manualPanelForm.laminateCode || '').split('+')[0].trim();
                   const hasWoodGrains = woodGrainsPreferences[baseLaminateCode] === true;
-                  
+
                   const newPanel = {
                     id: crypto.randomUUID(),
                     name,
                     height,
                     width,
                     laminateCode: manualPanelForm.laminateCode,
-                    A: manualPanelForm.A,
+                    plywoodType: manualPanelForm.plywoodType,
                     quantity: manualPanelForm.quantity,
                     grainDirection: hasWoodGrains, // ✅ DIRECT LINK: Database only, no form/toggle
                     gaddi: manualPanelForm.gaddi,
@@ -8402,14 +8327,14 @@ export default function Home() {
                   };
                   setManualPanels(prev => [...prev, newPanel]);
                   setShowManualPanelDialog(false);
-                  
+
                   const tempSheetContext = selectedSheetContext;
                   setSelectedSheetContext(null);
-                  
-                  const sheetInfo = tempSheetContext 
+
+                  const sheetInfo = tempSheetContext
                     ? ` to ${tempSheetContext.brand} sheet`
                     : '';
-                  
+
                   toast({
                     title: "Manual Panel Added",
                     description: `Added ${manualPanelForm.quantity} × ${name} (${width}×${height}mm)${sheetInfo}.`,
@@ -8420,7 +8345,7 @@ export default function Home() {
                     height: '',
                     width: '',
                     laminateCode: '',
-                    A: 'Apple Ply 16mm BWP',
+                    plywoodType: 'Apple Ply 16mm BWP',
                     quantity: 1,
                     grainDirection: false,
                     gaddi: false
@@ -8440,7 +8365,7 @@ export default function Home() {
           <AlertDialogHeader>
             <AlertDialogTitle>Clear All Cabinets & Spreadsheet?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all cabinets, spreadsheet data, and make the preview completely empty. 
+              This will permanently delete all cabinets, spreadsheet data, and make the preview completely empty.
               This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -8450,7 +8375,7 @@ export default function Home() {
               onClick={() => {
                 // Clear spreadsheet data from localStorage
                 localStorage.removeItem('cutlist_spreadsheet_v1');
-                
+
                 // Clear all cabinets and related state
                 updateCabinets([]);
                 setManualPanels([]);
@@ -8459,7 +8384,7 @@ export default function Home() {
                 setShowPreviewDialog(false);
                 setIsPreviewActive(false);
                 setLastAddedCabinet(null);
-                
+
                 // Reset form to default values
                 form.reset({
                   id: crypto.randomUUID(),
@@ -8469,8 +8394,10 @@ export default function Home() {
                   width: 600,
                   depth: 450,
                   widthReduction: 36,
-                  A: masterPlywoodBrand || 'Apple Ply 16mm BWP',
+                  plywoodType: masterPlywoodBrand || 'Apple Ply 16mm BWP',
                   backPanelPlywoodBrand: 'Apple ply 6mm BWP',
+                  shutterPlywoodBrand: masterPlywoodBrand || 'Apple Ply 16mm BWP',
+                  topPanelLaminateCode: masterLaminateCode || '',
                   bottomPanelLaminateCode: masterLaminateCode || '',
                   leftPanelLaminateCode: masterLaminateCode || '',
                   rightPanelLaminateCode: masterLaminateCode || '',
@@ -8501,7 +8428,7 @@ export default function Home() {
                   rightPanelGrainDirection: false,
                   backPanelGrainDirection: false
                 });
-                
+
                 toast({
                   title: "Everything Cleared",
                   description: "All cabinets and spreadsheet data have been deleted.",
@@ -8522,7 +8449,7 @@ export default function Home() {
             <AlertDialogTitle className="text-red-600">Laminate Code Required</AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
               <p className="font-semibold text-slate-900">Cannot add {pendingMaterialAction?.type === 'cabinet' ? 'cabinet' : 'shutter'} without specifying laminate codes for the following panels:</p>
-              
+
               {pendingMaterialAction?.missingPanels && pendingMaterialAction.missingPanels.length > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-md p-3 mt-2">
                   <ul className="space-y-2 text-sm" data-testid="missing-panels-list">
@@ -8535,7 +8462,7 @@ export default function Home() {
                   </ul>
                 </div>
               )}
-              
+
               <p className="text-sm text-slate-700 mt-3 bg-blue-50 border border-blue-200 rounded-md p-3">
                 <strong>Required:</strong> Please select both Front Laminate and Inner Laminate for all panels before adding the cabinet.
               </p>
@@ -8587,49 +8514,47 @@ export default function Home() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Panel Spreadsheet Section - Hidden by default */}
-      {spreadsheetVisible && (
-        <Card className="bg-white border-gray-200 shadow-md mt-8" data-spreadsheet-section>
-          <CardHeader>
-            <CardTitle className="text-gray-900">
-              <i className="fas fa-table mr-2 text-blue-400"></i>
-              Panel Spreadsheet (Import/Export CSV)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Spreadsheet onAddToCabinet={(rowData) => {
-              // Populate form with spreadsheet row data
-              if (rowData.height) form.setValue('height', parseFloat(rowData.height) || 0);
-              if (rowData.width) form.setValue('width', parseFloat(rowData.width) || 0);
-              if (rowData.qty) form.setValue('shutterCount', parseInt(rowData.qty) || 1);
-              if (rowData.roomName) form.setValue('roomName', rowData.roomName);
-              if (rowData.cabinetName) form.setValue('name', rowData.cabinetName);
-              if (rowData.plywoodBrand) form.setValue('A', rowData.plywoodBrand);
-              if (rowData.frontLaminate) {
-                form.setValue('topPanelLaminateCode', rowData.frontLaminate);
-                // Sync to all panels if link panels is enabled
-                if (panelsLinked) {
-                  syncCabinetConfigFrontLaminate(rowData.frontLaminate, true);
-                }
+      {/* Panel Spreadsheet Section */}
+      <Card className="bg-white border-gray-200 shadow-md mt-8" data-spreadsheet-section>
+        <CardHeader>
+          <CardTitle className="text-gray-900">
+            <i className="fas fa-table mr-2 text-blue-400"></i>
+            Panel Spreadsheet (Import/Export CSV)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Spreadsheet onAddToCabinet={(rowData) => {
+            // Populate form with spreadsheet row data
+            if (rowData.height) form.setValue('height', parseFloat(rowData.height) || 0);
+            if (rowData.width) form.setValue('width', parseFloat(rowData.width) || 0);
+            if (rowData.qty) form.setValue('shutterCount', parseInt(rowData.qty) || 1);
+            if (rowData.roomName) form.setValue('roomName', rowData.roomName);
+            if (rowData.cabinetName) form.setValue('name', rowData.cabinetName);
+            if (rowData.plywoodBrand) form.setValue('plywoodType', rowData.plywoodBrand);
+            if (rowData.frontLaminate) {
+              form.setValue('topPanelLaminateCode', rowData.frontLaminate);
+              // Sync to all panels if link panels is enabled
+              if (panelsLinked) {
+                syncCabinetConfigFrontLaminate(rowData.frontLaminate, true);
               }
-              if (rowData.innerLaminate) {
-                form.setValue('innerLaminateCode', rowData.innerLaminate);
+            }
+            if (rowData.innerLaminate) {
+              form.setValue('innerLaminateCode', rowData.innerLaminate);
+            }
+
+            // Scroll to cabinet section and show toast
+            setTimeout(() => {
+              if (cabinetSectionRef.current) {
+                cabinetSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }
-              
-              // Scroll to cabinet section and show toast
-              setTimeout(() => {
-                if (cabinetSectionRef.current) {
-                  cabinetSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-                toast({
-                  title: "Cabinet Data Loaded",
-                  description: "Spreadsheet row has been loaded into the cabinet form. Adjust as needed and click 'Add Cabinet'.",
-                });
-              }, 100);
-            }} />
-          </CardContent>
-        </Card>
-      )}
+              toast({
+                title: "Cabinet Data Loaded",
+                description: "Spreadsheet row has been loaded into the cabinet form. Adjust as needed and click 'Add Cabinet'.",
+              });
+            }, 100);
+          }} />
+        </CardContent>
+      </Card>
 
     </div>
   );
