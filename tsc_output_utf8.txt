@@ -1,0 +1,4 @@
+client/src/pages/home.tsx(8601,9): error TS1005: ')' expected.
+client/src/pages/home.tsx(8602,7): error TS1109: Expression expected.
+client/src/pages/home.tsx(8603,5): error TS1109: Expression expected.
+client/src/pages/home.tsx(8604,3): error TS1109: Expression expected.

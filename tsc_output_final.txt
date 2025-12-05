@@ -1,0 +1,13 @@
+client/src/components/Spreadsheet.tsx(142,13): error TS2345: Argument of type '(prev: Row[]) => { [key: string]: string; }[]' is not assignable to parameter of type 'SetStateAction<Row[]>'.
+  Type '(prev: Row[]) => { [key: string]: string; }[]' is not assignable to type '(prevState: Row[]) => Row[]'.
+    Type '{ [key: string]: string; }[]' is not assignable to type 'Row[]'.
+      Property 'id' is missing in type '{ [key: string]: string; }' but required in type 'Row'.
+client/src/components/ui/DesignCenter.tsx(380,46): error TS2802: Type 'Set<string>' can only be iterated through when using the '--downlevelIteration' flag or with a '--target' of 'es2015' or higher.
+client/src/pages/home.tsx(7784,58): error TS2554: Expected 2 arguments, but got 1.
+client/src/pages/home.tsx(7786,58): error TS18047: 'lineConfig' is possibly 'null'.
+client/src/pages/home.tsx(7786,69): error TS2339: Property 'sheetAxis' does not exist on type '"horizontal" | "vertical"'.
+  Property 'sheetAxis' does not exist on type '"horizontal"'.
+client/src/pages/home.tsx(7815,58): error TS2554: Expected 2 arguments, but got 1.
+client/src/pages/home.tsx(7817,43): error TS18047: 'lineConfig' is possibly 'null'.
+client/src/pages/home.tsx(7817,54): error TS2339: Property 'sheetAxis' does not exist on type '"horizontal" | "vertical"'.
+  Property 'sheetAxis' does not exist on type '"horizontal"'.

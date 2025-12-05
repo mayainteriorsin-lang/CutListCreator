@@ -141,8 +141,9 @@ export default function Spreadsheet({ onAddToCabinet }: SpreadsheetProps) {
     setColumns((prev) => prev.filter((c) => c.id !== colId));
     setRows((prev) =>
       prev.map((row) => {
-        const { [colId]: _, ...rest } = row;
-        return rest;
+        const newRow = { ...row };
+        delete newRow[colId];
+        return newRow;
       })
     );
   };
@@ -203,7 +204,7 @@ export default function Spreadsheet({ onAddToCabinet }: SpreadsheetProps) {
         // Extract column names from first row
         if (parsed.length === 0) return;
         const headerNames = Object.keys(parsed[0]);
-        
+
         // Map import headers to standard column IDs
         const headerMapping: { [key: string]: string } = {
           "height": "height", "Height": "height", "HEIGHT": "height", "Height (mm)": "height",
@@ -217,21 +218,21 @@ export default function Spreadsheet({ onAddToCabinet }: SpreadsheetProps) {
           "cabinet name": "cabinetName", "Cabinet Name": "cabinetName", "cabinetName": "cabinetName", "Name": "cabinetName",
           "laminate code": "frontLaminate", // Backward compatibility
         };
-        
+
         const newCols: Column[] = [];
         const colIdMap: { [key: string]: string } = {}; // Maps original header to standardized ID
-        
+
         headerNames.forEach((originalHeader) => {
           const standardId = headerMapping[originalHeader] || originalHeader;
           colIdMap[originalHeader] = standardId;
-          
+
           // Only add column if not already added
           if (!newCols.find(c => c.id === standardId)) {
             const displayName = defaultColumns.find(dc => dc.id === standardId)?.name || originalHeader;
             newCols.push({ id: standardId, name: displayName });
           }
         });
-        
+
         setColumns(newCols);
 
         // Map data to new column IDs
@@ -260,7 +261,7 @@ export default function Spreadsheet({ onAddToCabinet }: SpreadsheetProps) {
       if (data.length === 0) return;
 
       const headerNames = Object.keys(data[0]);
-      
+
       // Map import headers to standard column IDs
       const headerMapping: { [key: string]: string } = {
         "height": "height", "Height": "height", "HEIGHT": "height", "Height (mm)": "height",
@@ -274,21 +275,21 @@ export default function Spreadsheet({ onAddToCabinet }: SpreadsheetProps) {
         "cabinet name": "cabinetName", "Cabinet Name": "cabinetName", "cabinetName": "cabinetName", "Name": "cabinetName",
         "laminate code": "frontLaminate", // Backward compatibility
       };
-      
+
       const newCols: Column[] = [];
       const colIdMap: { [key: string]: string } = {}; // Maps original header to standardized ID
-      
+
       headerNames.forEach((originalHeader) => {
         const standardId = headerMapping[originalHeader] || originalHeader;
         colIdMap[originalHeader] = standardId;
-        
+
         // Only add column if not already added
         if (!newCols.find(c => c.id === standardId)) {
           const displayName = defaultColumns.find(dc => dc.id === standardId)?.name || originalHeader;
           newCols.push({ id: standardId, name: displayName });
         }
       });
-      
+
       setColumns(newCols);
 
       const mapped: Row[] = data.map((r, i) => {

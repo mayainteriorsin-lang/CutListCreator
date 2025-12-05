@@ -36,6 +36,8 @@ export const panelSchema = z.object({
   gaddi: z.boolean().optional(),
   grainDirection: z.boolean().optional(), // Wood grain direction flag (prevents rotation)
   A: z.string().optional(), // Main plywood brand (for regular panels)
+  backPanelPlywoodBrand: z.string().optional(), // Separate back panel plywood brand
+  plywoodType: z.string().optional(), // Explicit plywood type field
   nomW: z.number().positive().optional(), // Nominal width (original size before rotation)
   nomH: z.number().positive().optional(), // Nominal height (original size before rotation)
 });
@@ -69,7 +71,7 @@ export const cabinetSchema = z.object({
   widthReduction: z.number().min(0).default(36),
   backPanelWidthReduction: z.number().min(0).default(20),
   backPanelHeightReduction: z.number().min(0).default(20),
-  
+
   // Shutters
   shuttersEnabled: z.boolean().default(false),
   shutterCount: z.number().min(0).default(0),
@@ -77,7 +79,7 @@ export const cabinetSchema = z.object({
   shutterHeightReduction: z.number().min(0).max(20).default(0),
   shutterWidthReduction: z.number().min(0).max(5).default(0),
   shutters: z.array(shutterSchema).default([]),
-  
+
   // ✅ CENTRALIZED: All panels reference codes from central godown
   // Instead of storing full codes, store the code string (which is looked up from godown)
   topPanelLaminateCode: z.string().optional(),
@@ -85,75 +87,81 @@ export const cabinetSchema = z.object({
   leftPanelLaminateCode: z.string().optional(),
   rightPanelLaminateCode: z.string().optional(),
   backPanelLaminateCode: z.string().optional(),
-  
+
   // Individual panel inner laminate codes (back/inside faces)
   topPanelInnerLaminateCode: z.string().optional(),
   bottomPanelInnerLaminateCode: z.string().optional(),
   leftPanelInnerLaminateCode: z.string().optional(),
   rightPanelInnerLaminateCode: z.string().optional(),
   backPanelInnerLaminateCode: z.string().optional(),
-  
+
   // Inner laminate code (for inside/back faces of all panels - from Cabinet Configuration)
   innerLaminateCode: z.string().optional(),
-  
+
   // Individual panel gaddi toggles
   topPanelGaddi: z.boolean().default(false).optional(),
   bottomPanelGaddi: z.boolean().default(false).optional(),
   leftPanelGaddi: z.boolean().default(false).optional(),
   rightPanelGaddi: z.boolean().default(false).optional(),
-  
+
   // Individual panel grain direction toggles (for Front Laminate)
   topPanelGrainDirection: z.boolean().default(false).optional(),
   bottomPanelGrainDirection: z.boolean().default(false).optional(),
   leftPanelGrainDirection: z.boolean().default(false).optional(),
   rightPanelGrainDirection: z.boolean().default(false).optional(),
   backPanelGrainDirection: z.boolean().default(false).optional(),
-  
+
   // Individual panel grain direction toggles (for Inner Laminate)
   topPanelInnerGrainDirection: z.boolean().default(false).optional(),
   bottomPanelInnerGrainDirection: z.boolean().default(false).optional(),
   leftPanelInnerGrainDirection: z.boolean().default(false).optional(),
   rightPanelInnerGrainDirection: z.boolean().default(false).optional(),
   backPanelInnerGrainDirection: z.boolean().default(false).optional(),
-  
+
   // Shelves and center post grain direction toggles (for Inner Laminate)
   shelvesGrainDirection: z.boolean().default(false).optional(),
   centerPostGrainDirection: z.boolean().default(false).optional(),
-  
+
   // Note field for additional information
   note: z.string().optional(),
-  
+
   // Custom plywood type for Manual Type selection
   customPlywoodType: z.string().optional(),
-  
+
   // ✅ UNIFIED PLYWOOD FIELD (Secret code name: A)
   // Used for Cabinet and Shutter panels (Top, Bottom, Left, Right, Shutters)
   A: z.string().optional(),
-  
+
   // ✅ SEPARATE BACK PANEL PLYWOOD - Independent from main plywood brand
   backPanelPlywoodBrand: z.string().optional(),
-  
+
+  // ✅ PLYWOOD TYPE (Explicit field for UI compatibility)
+  plywoodType: z.string().optional(),
+
+  // ✅ SHUTTER PLYWOOD BRAND (Explicit field for UI compatibility)
+  shutterPlywoodBrand: z.string().optional(),
+
   // ✅ UNIFIED LAMINATE CODE FIELDS (Secret code names: B = front, C = inner)
   // Backend consolidation fields for laminate codes
   // Keeps individual panel fields on frontend for UI, but uses B/C for backend storage
   B: z.string().optional(), // Front laminate codes consolidated
   C: z.string().optional(), // Inner laminate codes consolidated
-  
+
   // Shutter laminate code for Quick Shutter
   shutterLaminateCode: z.string().optional(),
-  
+
   // Shutter inner laminate code for Quick Shutter
   shutterInnerLaminateCode: z.string().optional(),
-  
+
   // Shutter grain direction for Quick Shutter
   shutterGrainDirection: z.boolean().default(false).optional(),
-  
+
   // Shutter Gaddi toggle for Quick Shutter
   shutterGaddi: z.boolean().default(false).optional(),
-  
+
   // Room name field for cabinet categorization
   roomName: z.string().optional(),
-  
+
   // Gaddi thickness field for Quick Shutter
   gaddiThickness: z.string().optional(),
 });

@@ -7781,9 +7781,10 @@ export default function Home() {
                                         return null;
                                       }
 
-                                      const lineConfig = calculateGaddiLineDirection(gaddiPanel);
+                                      const direction = calculateGaddiLineDirection(gaddiPanel.gaddi, panel.grainDirection ?? false);
+                                      if (!direction) return null;
                                       const gaddiFontSize = Math.max(7, Math.min(12, w / 15, h / 12));
-                                      const labelStyle = lineConfig.sheetAxis === 'x'
+                                      const labelStyle = direction === 'horizontal'
                                         ? { top: '4px', left: '6px', fontSize: `${gaddiFontSize}px` }
                                         : { left: '4px', top: '50%', transform: 'translateY(-50%) rotate(-90deg)', transformOrigin: 'center', fontSize: `${gaddiFontSize}px` };
 
@@ -7812,9 +7813,10 @@ export default function Home() {
                                         return null;
                                       }
 
-                                      const lineConfig = calculateGaddiLineDirection(gaddiPanel);
+                                      const direction = calculateGaddiLineDirection(gaddiPanel.gaddi, panel.grainDirection ?? false);
+                                      if (!direction) return null;
 
-                                      if (lineConfig.sheetAxis === 'x') {
+                                      if (direction === 'horizontal') {
                                         return (
                                           <div
                                             className="absolute"
@@ -8597,3 +8599,6 @@ export default function Home() {
           <DesignCenter onExportToCutlist={handleDesignCenterExport} />
         </CardContent>
       </Card>
+    </div>
+  );
+}

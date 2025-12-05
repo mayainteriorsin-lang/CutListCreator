@@ -74,16 +74,16 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
   const [widthValue, setWidthValue] = useState(200);
   const [widthReduction, setWidthReduction] = useState(36);
   const calculatedWidth = widthValue - widthReduction;
-  
+
   // Smart Toolbar state
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [customDepth, setCustomDepth] = useState(560);
   const [depthModified, setDepthModified] = useState(false);
-  
+
   const SNAP = (v: number) => Math.round(v / gridSize) * gridSize;
   const getAngle = (x1: number, y1: number, x2: number, y2: number) => Math.round(Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI) % 360;
   const snapAngle = (angle: number) => Math.round(angle / 45) * 45;
-  
+
   const [mode, setMode] = useState<Mode>("select");
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [temp, setTemp] = useState<Partial<Shape> | null>(null);
@@ -218,7 +218,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
 
     const isDWG = file.name.toLowerCase().endsWith(".dwg");
     const reader = new FileReader();
-    
+
     reader.onload = async (event) => {
       try {
         let dxfContent: string;
@@ -245,13 +245,13 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
 
         // Parse DXF content
         const parsed = parseDXF(dxfContent);
-        
+
         // Normalize coordinates to fit in canvas
         const bounds = parsed.bounds;
         const padding = 1000;
         const offsetX = -bounds.minX + padding;
         const offsetY = -bounds.minY + padding;
-        
+
         // Convert DXF lines to our LineShape format
         const importedLines: LineShape[] = parsed.lines.map((line, idx) => ({
           id: uid("CAD-"),
@@ -283,7 +283,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
     } else {
       reader.readAsText(file);
     }
-    
+
     // Reset input so same file can be imported again
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
@@ -377,7 +377,12 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
       const hit = hitTest(snapped.x, snapped.y);
       if (hit) {
         if (e.ctrlKey || e.metaKey) {
-          setSelectedIds(prev => new Set([...prev, hit.id]));
+          setSelectedIds(prev => {
+            const next = new Set<string>();
+            prev.forEach(id => next.add(id));
+            next.add(hit.id);
+            return next;
+          });
         } else {
           setSelectedId(hit.id);
           setSelectedIds(new Set([hit.id]));
@@ -559,14 +564,14 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
   function handleExport() {
     // Find selected rectangle or largest rectangle
     let targetRect: RectShape | null = null;
-    
+
     if (selectedId) {
       const selected = shapes.find(s => s.id === selectedId);
       if (selected && selected.type === "rect") {
         targetRect = selected as RectShape;
       }
     }
-    
+
     // If no selected rect, find largest
     if (!targetRect) {
       let maxArea = 0;
@@ -581,7 +586,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
         }
       }
     }
-    
+
     if (!targetRect) {
       alert("Please draw and select a rectangle to export");
       return;
@@ -589,7 +594,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
 
     const width = Math.round(targetRect.w);
     const height = Math.round(targetRect.h);
-    
+
     // Smart Naming logic
     let smartName = "Cabinet";
     if (height > 1800) {
@@ -599,7 +604,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
     } else {
       smartName = "Cabinet (from Design)";
     }
-    
+
     // Smart Depth suggestion
     let suggestedDepth = customDepth;
     if (!depthModified) {
@@ -614,7 +619,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
       }
       setCustomDepth(suggestedDepth);
     }
-    
+
     // Call callback
     if (onExportToCutlist) {
       onExportToCutlist({
@@ -662,11 +667,11 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
     const fine = gridSize;           // 1x - light gray (user's grid size)
     const medium = gridSize * 10;    // 10x - medium gray
     const coarse = gridSize * 100;   // 100x - dark gray
-    
+
     // Rulers on X and Y axes
     const rulerMarks: JSX.Element[] = [];
     const labelInterval = coarse > 0 ? coarse : medium;
-    
+
     // X-axis ruler (top)
     for (let x = 0; x <= canvasSize.w; x += labelInterval) {
       rulerMarks.push(
@@ -678,7 +683,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
         </g>
       );
     }
-    
+
     // Y-axis ruler (left)
     for (let y = 0; y <= canvasSize.h; y += labelInterval) {
       rulerMarks.push(
@@ -690,7 +695,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
         </g>
       );
     }
-    
+
     return (
       <>
         <defs>
@@ -698,14 +703,14 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
           <pattern id="gridFine" width={fine} height={fine} patternUnits="userSpaceOnUse">
             <path d={`M ${fine} 0 L ${fine} ${fine} L 0 ${fine}`} stroke="#b3d9ff" strokeWidth={0.8} fill="none" />
           </pattern>
-          
+
           {/* Medium grid: 10x gridSize - bold medium blue - COMPLETE SQUARES */}
           {medium > fine && (
             <pattern id="gridMedium" width={medium} height={medium} patternUnits="userSpaceOnUse">
               <path d={`M ${medium} 0 L ${medium} ${medium} L 0 ${medium}`} stroke="#4da6ff" strokeWidth={1.5} fill="none" />
             </pattern>
           )}
-          
+
           {/* Coarse grid: 100x gridSize - bold dark blue - COMPLETE SQUARES */}
           {coarse > medium && (
             <pattern id="gridCoarse" width={coarse} height={coarse} patternUnits="userSpaceOnUse">
@@ -713,13 +718,13 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
             </pattern>
           )}
         </defs>
-        
+
         {/* Layered background */}
         <rect width={canvasSize.w} height={canvasSize.h} fill="#fff" />
         {gridVisible && <rect width={canvasSize.w} height={canvasSize.h} fill="url(#gridFine)" />}
         {gridVisible && medium > fine && <rect width={canvasSize.w} height={canvasSize.h} fill="url(#gridMedium)" />}
         {gridVisible && coarse > medium && <rect width={canvasSize.w} height={canvasSize.h} fill="url(#gridCoarse)" />}
-        
+
         {/* Rulers on X and Y axes */}
         <g id="rulers">
           {rulerMarks}
@@ -736,7 +741,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
       const my = (d.y1 + d.y2) / 2;
       const len = Math.round(Math.hypot(d.x2 - d.x1, d.y2 - d.y1));
       const angle = getAngle(d.x1, d.y1, d.x2, d.y2);
-      
+
       if (d.dimType === "horizontal") {
         return (
           <g key={d.id}>
@@ -793,7 +798,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
       const angle = getAngle(l.x1, l.y1, l.x2, l.y2);
       const lineCol = l.color ?? "#000000";
       const marker = l.marker ?? "none";
-      
+
       // Arrow calculation
       const arrowLen = 16;
       const arrowAngle = angle * Math.PI / 180;
@@ -801,32 +806,32 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
       const ay = l.y2 - arrowLen * Math.sin(arrowAngle);
       const arrowLeft = Math.atan2(ay - (l.y2 - 6 * Math.sin(arrowAngle)), ax - (l.x2 - 6 * Math.cos(arrowAngle)));
       const arrowRight = Math.atan2(ay - (l.y2 + 6 * Math.sin(arrowAngle)), ax - (l.x2 + 6 * Math.cos(arrowAngle)));
-      
+
       return (
         <g key={l.id}>
           <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={lineCol} strokeWidth={2.5} />
-          
+
           {/* End marker */}
           {marker === "arrow" && (
             <polygon points={`${l.x2},${l.y2} ${ax + 8 * Math.cos(arrowLeft)},${ay + 8 * Math.sin(arrowLeft)} ${ax + 8 * Math.cos(arrowRight)},${ay + 8 * Math.sin(arrowRight)}`} fill={lineCol} />
           )}
           {marker === "circle" && <circle cx={l.x2} cy={l.y2} r={4} fill={lineCol} />}
-          
+
           {/* Endpoints */}
           <circle cx={l.x1} cy={l.y1} r={3} fill="#fff" stroke={lineCol} strokeWidth={1.5} />
           <circle cx={l.x2} cy={l.y2} r={3} fill="#fff" stroke={lineCol} strokeWidth={1.5} />
-          
+
           {isSelected && (
             <>
               <rect x={l.x1 - 6} y={l.y1 - 6} width={12} height={12} fill="none" stroke={lineCol} strokeWidth={1} />
               <rect x={l.x2 - 6} y={l.y2 - 6} width={12} height={12} fill="none" stroke={lineCol} strokeWidth={1} />
-              
+
               {/* Prominent length display when selected */}
               <rect x={mx - 32} y={my - 26} width={64} height={20} fill="#4da6ff" rx={4} />
               <text x={mx} y={my - 10} textAnchor="middle" fontSize={14} fill="#fff" fontWeight="bold">{len}mm</text>
             </>
           )}
-          
+
           {/* Dimension labels: custom label takes priority */}
           {!isSelected && (
             <text x={mx} y={my - 8} textAnchor="middle" fontSize={12} fill={lineCol} fontWeight={600}>
@@ -951,12 +956,12 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
             <option value="base">Base Unit (600×870)</option>
             <option value="wall">Wall Unit (600×720)</option>
           </select>
-          
+
           <span style={{ display: "flex", gap: 4, alignItems: "center", fontSize: 11 }}>
             Depth (mm):
-            <input 
-              type="number" 
-              min="100" 
+            <input
+              type="number"
+              min="100"
               max="1000"
               value={customDepth}
               onChange={(e) => {
@@ -966,7 +971,7 @@ export default function DesignCenter({ onExportToCutlist }: DesignCenterProps = 
               style={{ width: 50, padding: "4px 6px", border: "1px solid #4da6ff", borderRadius: 3, fontSize: 11 }}
             />
           </span>
-          
+
           <button
             onClick={handleExport}
             style={{
