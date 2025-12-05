@@ -4268,11 +4268,36 @@ export default function Home() {
                                   // Clear field
                                   setMasterCustomLaminateInput('');
                                   setMasterLaminateCode('');
+                                }
+                              }}
+                              onFocus={() => {
+                                if (masterLaminateCode && !masterCustomLaminateInput) {
+                                  setMasterLaminateCode('');
+                                }
+                              }}
+                              placeholder="Type front laminate code"
+                              className="text-sm"
+                              data-testid="input-master-laminate-code"
+                            />
 
-                                  <div className="text-xs text-green-600 mt-1 font-medium">
-                                    ↵ Press Enter to save "{masterCustomLaminateInput}"
-                                  </div>
-                        )}
+                            {masterLaminateCode && !masterCustomLaminateInput && (
+                              <button
+                                onClick={() => {
+                                  setMasterLaminateCode('');
+                                  masterLaminateInputRef.current?.focus();
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                title="Clear selection"
+                              >
+                                ×
+                              </button>
+                            )}
+
+                            {masterCustomLaminateInput && masterCustomLaminateInput.length >= 3 && !globalLaminateMemory.includes(masterCustomLaminateInput) && (
+                              <div className="text-xs text-green-600 mt-1 font-medium">
+                                ↵ Press Enter to save "{masterCustomLaminateInput}"
+                              </div>
+                            )}
 
                             {/* Saved Codes with Select and Delete */}
                             {globalLaminateMemory.length > 0 && (
