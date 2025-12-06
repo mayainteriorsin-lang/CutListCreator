@@ -5,14 +5,14 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { laminateMemory, insertLaminateMemorySchema, laminateWoodGrainsPreference, plywoodBrandMemory, insertPlywoodBrandMemorySchema, quickShutterMemory, insertQuickShutterMemorySchema, masterSettingsMemory, insertMasterSettingsMemorySchema, laminateCodeGodown, insertLaminateCodeGodownSchema } from "@shared/schema";
+import { laminateMemory, insertLaminateMemorySchema, laminateWoodGrainsPreference, plywoodBrandMemory, insertPlywoodBrandMemorySchema, quickShutterMemory, insertQuickShutterMemorySchema, masterSettingsMemory, insertMasterSettingsMemorySchema, laminateCodeGodown, insertLaminateCodeGodownSchema, godownMemory, insertGodownMemorySchema } from "@shared/schema";
 import { eq, sql, desc } from "drizzle-orm";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { z } from "zod";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Global laminate memory routes
-  
+
   // Get all saved laminate codes
   app.get("/api/laminate-memory", async (req, res) => {
     try {
@@ -33,7 +33,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { code } = validation.data;
-      
+
       // Check if code already exists
       const existing = await db.select().from(laminateMemory).where(eq(laminateMemory.code, code));
       if (existing.length > 0) {
@@ -53,7 +53,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { code } = req.params;
       const deleted = await db.delete(laminateMemory).where(eq(laminateMemory.code, code)).returning();
-      
+
       if (deleted.length === 0) {
         return res.status(404).json({ error: "Code not found" });
       }
@@ -66,7 +66,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Plywood brand memory routes
-  
+
   // Get all saved plywood brands
   app.get("/api/plywood-brand-memory", async (req, res) => {
     try {
@@ -87,7 +87,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { brand } = validation.data;
-      
+
       // Check if brand already exists
       const existing = await db.select().from(plywoodBrandMemory).where(eq(plywoodBrandMemory.brand, brand));
       if (existing.length > 0) {
@@ -107,7 +107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { brand } = req.params;
       const deleted = await db.delete(plywoodBrandMemory).where(eq(plywoodBrandMemory.brand, brand)).returning();
-      
+
       if (deleted.length === 0) {
         return res.status(404).json({ error: "Brand not found" });
       }
@@ -120,7 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Quick Shutter memory routes
-  
+
   // Get the most recent Quick Shutter settings
   app.get("/api/quick-shutter-memory", async (req, res) => {
     try {
@@ -128,7 +128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(quickShutterMemory)
         .orderBy(desc(quickShutterMemory.updatedAt))
         .limit(1);
-      
+
       if (memory.length === 0) {
         return res.json({
           roomName: null,
@@ -150,14 +150,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Validate request body using insert schema
       const validation = insertQuickShutterMemorySchema.safeParse(req.body);
       if (!validation.success) {
-        return res.status(400).json({ 
-          error: "Invalid request data", 
-          details: validation.error.issues 
+        return res.status(400).json({
+          error: "Invalid request data",
+          details: validation.error.issues
         });
       }
 
       const { roomName, plywoodBrand, laminateCode } = validation.data;
-      
+
       // Check if any memory record exists
       const existing = await db.select().from(quickShutterMemory).limit(1);
 
@@ -191,7 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Master Settings memory routes
-  
+
   // Get the most recent Master Settings
   app.get("/api/master-settings-memory", async (req, res) => {
     try {
@@ -199,7 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(masterSettingsMemory)
         .orderBy(desc(masterSettingsMemory.updatedAt))
         .limit(1);
-      
+
       if (memory.length === 0) {
         return res.json({
           sheetWidth: '1210',
@@ -221,14 +221,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validation = insertMasterSettingsMemorySchema.safeParse(req.body);
       if (!validation.success) {
-        return res.status(400).json({ 
-          error: "Invalid request data", 
-          details: validation.error.issues 
+        return res.status(400).json({
+          error: "Invalid request data",
+          details: validation.error.issues
         });
       }
 
       const { sheetWidth, sheetHeight, kerf, masterLaminateCode } = validation.data;
-      
+
       // Check if any memory record exists
       const existing = await db.select().from(masterSettingsMemory).limit(1);
 
@@ -263,8 +263,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Godown Memory routes
+
+  // Get all godown names
+  app.get("/api/godown-memory", async (req, res) => {
+    try {
+      const godowns = await db.select().from(godownMemory).orderBy(desc(godownMemory.createdAt));
+      res.json(godowns);
+    } catch (error) {
+      console.error("Error fetching godown memory:", error);
+      res.status(500).json({ error: "Failed to fetch godowns" });
+    }
+  });
+
+  // Save a new godown name
+  app.post("/api/godown-memory", async (req, res) => {
+    try {
+      const { name, type } = req.body;
+
+      if (!name) {
+        return res.status(400).json({ error: "Godown name is required" });
+      }
+
+      // Check if exists
+      const existing = await db.select().from(godownMemory).where(eq(godownMemory.name, name));
+      if (existing.length > 0) {
+        // Already exists, return it
+        return res.json(existing[0]);
+      }
+
+      const [newGodown] = await db.insert(godownMemory).values({
+        name,
+        type: type || 'general'
+      }).returning();
+
+      res.status(201).json(newGodown);
+    } catch (error) {
+      console.error("Error saving godown memory:", error);
+      res.status(500).json({ error: "Failed to save godown" });
+    }
+  });
+
   // ✅ CENTRAL LAMINATE CODE GODOWN (Warehouse) Routes
-  
+
   // Get all laminate codes from central godown
   app.get("/api/laminate-code-godown", async (req, res) => {
     try {
@@ -300,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { code, name, innerCode, supplier, thickness, description, woodGrainsEnabled } = validation.data;
-      
+
       // Check if code already exists
       const existing = await db.select().from(laminateCodeGodown).where(eq(laminateCodeGodown.code, code));
       if (existing.length > 0) {
@@ -341,7 +382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .where(eq(laminateCodeGodown.code, code))
         .returning();
-      
+
       if (!updated) {
         return res.status(404).json({ error: "Laminate code not found in godown" });
       }
@@ -358,7 +399,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { code } = req.params;
       const deleted = await db.delete(laminateCodeGodown).where(eq(laminateCodeGodown.code, code)).returning();
-      
+
       if (deleted.length === 0) {
         return res.status(404).json({ error: "Laminate code not found in godown" });
       }
@@ -371,13 +412,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Wood grains preference routes
-  
+
   // Get all wood grains preferences from WOOD GRAINS PREFERENCE TABLE
   app.get("/api/wood-grains-preferences", async (req, res) => {
     try {
       const preferences = await db.select()
         .from(laminateWoodGrainsPreference);
-      
+
       // ✅ FIX: Read from actual preferences table and convert to boolean
       const normalizedPreferences = preferences.map(pref => ({
         id: pref.id,
@@ -386,14 +427,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         createdAt: pref.createdAt,
         updatedAt: pref.updatedAt
       }));
-      
+
       res.json(normalizedPreferences);
     } catch (error: any) {
       console.error("Error fetching all wood grains preferences:", error);
       res.status(500).json({ error: "Failed to fetch wood grains preferences" });
     }
   });
-  
+
   // Get wood grains preference for a specific laminate code
   app.get("/api/wood-grains-preference/:code", async (req, res) => {
     try {
@@ -401,7 +442,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const preference = await db.select()
         .from(laminateWoodGrainsPreference)
         .where(eq(laminateWoodGrainsPreference.laminateCode, code));
-      
+
       if (preference.length === 0) {
         return res.json({ woodGrainsEnabled: false });
       }
@@ -417,7 +458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/wood-grains-preference", async (req, res) => {
     try {
       const { laminateCode, woodGrainsEnabled } = req.body;
-      
+
       if (!laminateCode) {
         return res.status(400).json({ error: "Laminate code is required" });
       }
@@ -430,7 +471,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existing.length > 0) {
         // Update existing preference
         const [updated] = await db.update(laminateWoodGrainsPreference)
-          .set({ 
+          .set({
             woodGrainsEnabled: woodGrainsEnabled ? 'true' : 'false',
             updatedAt: sql`now()`
           })
@@ -468,7 +509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Client file storage routes
-  
+
   // Slugify function to sanitize client names
   function slugifyClientName(clientName: string): string {
     return clientName
@@ -605,7 +646,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const objectStorageService = new ObjectStorageService();
       const file = await objectStorageService.getClientFile(clientSlug, filename);
-      
+
       await objectStorageService.downloadObject(file, res);
     } catch (error) {
       if (error instanceof ObjectNotFoundError) {

@@ -247,6 +247,16 @@ export const insertPlywoodBrandMemorySchema = createInsertSchema(plywoodBrandMem
 export const insertQuickShutterMemorySchema = createInsertSchema(quickShutterMemory);
 export const insertMasterSettingsMemorySchema = createInsertSchema(masterSettingsMemory);
 
+// ✅ GODOWN MEMORY - Auto-storage for Godown names
+export const godownMemory = pgTable("godown_memory", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull().unique(),
+  type: varchar("type", { length: 50 }).default('general'), // 'plywood' or 'laminate' or 'general'
+  createdAt: timestamp("created_at").default(sql`now()`).notNull(),
+});
+
+export const insertGodownMemorySchema = createInsertSchema(godownMemory);
+
 export const cuttingListSchema = z.object({
   cabinets: z.array(cabinetSchema),
   laminateCodes: z.array(laminateCodeSchema).default([]),
@@ -275,6 +285,9 @@ export type QuickShutterMemory = typeof quickShutterMemory.$inferSelect;
 export type InsertQuickShutterMemory = z.infer<typeof insertQuickShutterMemorySchema>;
 export type MasterSettingsMemory = typeof masterSettingsMemory.$inferSelect;
 export type InsertMasterSettingsMemory = z.infer<typeof insertMasterSettingsMemorySchema>;
+
+export type GodownMemory = typeof godownMemory.$inferSelect;
+export type InsertGodownMemory = z.infer<typeof insertGodownMemorySchema>;
 
 export interface PanelGroup {
   laminateCode: string;

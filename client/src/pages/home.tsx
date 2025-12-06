@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { useToast } from '@/hooks/use-toast';
+import { GodownCombobox } from "@/components/ui/GodownCombobox";
 import DesignCenter from "../components/ui/DesignCenter";
 import Spreadsheet from '@/components/Spreadsheet';
 import { Cabinet, cabinetSchema, ShutterType, Panel, PanelGroup, CuttingListSummary, LaminateCode, cabinetTypes, CabinetType, LaminateMemory, PlywoodBrandMemory, LaminateCodeGodown } from '@shared/schema';
@@ -38,6 +39,8 @@ import { optimizeCutlist } from '@/lib/cutlist-optimizer';
 
 // Cabinet form memory helpers
 const CABINET_FORM_MEMORY_KEY = 'cabinetFormMemory_v1';
+
+import { useMaterialStore } from '@/features/materialStore';
 
 interface CabinetFormMemory {
   roomName?: string;
@@ -450,25 +453,48 @@ export default function Home() {
   const [quotationNotes, setQuotationNotes] = useState('');
   const [quotationDetailsVisible, setQuotationDetailsVisible] = useState(false);
 
-  // Master Settings state
+  // Master Settings state managed by Zustand
+  const {
+    masterSettings,
+    plywoodOptions,
+    laminateOptions,
+    isLoadingMasterSettings,
+    isLoadingMaterials,
+    fetchMasterSettings,
+    saveMasterSettings,
+    fetchMaterials,
+    addLaminate,
+    addPlywood
+  } = useMaterialStore();
+
   const [masterSettingsVisible, setMasterSettingsVisible] = useState(false);
-  const [masterPlywoodBrand, setMasterPlywoodBrand] = useState('Apple Ply 16mm BWP');
-  const [masterPlywoodGodown, setMasterPlywoodGodown] = useState(''); // ✅ Master Plywood Godown
-  const [masterLaminateCode, setMasterLaminateCode] = useState('');
-  const [masterLaminateGodown, setMasterLaminateGodown] = useState(''); // ✅ Master Laminate Godown
-  const [masterInnerLaminateCode, setMasterInnerLaminateCode] = useState('off white');
-  const [masterWoodGrainsToggle, setMasterWoodGrainsToggle] = useState(false); // ✅ Master toggle for wood grains
-  const [woodGrainsPreferences, setWoodGrainsPreferences] = useState<Record<string, boolean>>({});
-  const [woodGrainsPreferencesLoading, setWoodGrainsPreferencesLoading] = useState(true); // ✅ FIX: Track loading state
-  const [woodGrainsPreferencesLoaded, setWoodGrainsPreferencesLoaded] = useState(false); // ✅ FIX #1: Track successful load
-  const [grainMap, setGrainMap] = useState<Record<string, boolean>>({});
-  const [optimizePlywoodUsage, setOptimizePlywoodUsage] = useState(true);
   const [masterCustomLaminateInput, setMasterCustomLaminateInput] = useState('');
   const [masterCustomInnerLaminateInput, setMasterCustomInnerLaminateInput] = useState('');
   const [masterCustomPlywoodInput, setMasterCustomPlywoodInput] = useState('');
   const masterLaminateInputRef = useRef<HTMLInputElement>(null);
   const masterInnerLaminateInputRef = useRef<HTMLInputElement>(null);
-  const masterLaminateDropdownRef = useRef<HTMLDetailsElement>(null); // ✅ Ref to control dropdown
+  const masterLaminateDropdownRef = useRef<HTMLDetailsElement>(null);
+
+  // Derived state for easy access (UI compatibility)
+  const masterPlywoodBrand = (masterSettings as any)?.plywoodBrand || 'Apple Ply 16mm BWP';
+  const masterPlywoodGodown = (masterSettings as any)?.plywoodGodown || '';
+  const masterLaminateCode = masterSettings?.masterLaminateCode || '';
+  const masterLaminateGodown = (masterSettings as any)?.laminateGodown || '';
+  const masterInnerLaminateCode = (masterSettings as any)?.innerLaminateCode || 'off white';
+  const masterWoodGrainsToggle = (masterSettings as any)?.woodGrainsEnabled === 'true'; // string to boolean
+
+  // Wood grain preferences still tracked locally for now, but synced with types
+  const [woodGrainsPreferences, setWoodGrainsPreferences] = useState<Record<string, boolean>>({});
+  const [woodGrainsPreferencesLoading, setWoodGrainsPreferencesLoading] = useState(true);
+  const [woodGrainsPreferencesLoaded, setWoodGrainsPreferencesLoaded] = useState(false);
+  const [grainMap, setGrainMap] = useState<Record<string, boolean>>({});
+  const [optimizePlywoodUsage, setOptimizePlywoodUsage] = useState(true);
+
+  // Initial Data Fetch
+  useEffect(() => {
+    fetchMasterSettings();
+    fetchMaterials();
+  }, []); // Run once on mount
 
   // ✅ CRITICAL FIX: Persist tracking across page refreshes using localStorage
   const LAMINATE_TRACKING_KEY = 'userSelectedLaminates_v1';
@@ -856,34 +882,10 @@ export default function Home() {
     },
   });
 
-  // ✅ FIXED: Extract laminate codes from central godown
-  const globalLaminateMemory = laminateCodeGodownData.map(item => item.code);
-
-  // React Query hooks for plywood brand memory
-  const { data: plywoodBrandMemoryData = [], isLoading: isPlywoodBrandMemoryLoading } = useQuery<PlywoodBrandMemory[]>({
-    queryKey: ['/api/plywood-brand-memory'],
-  });
-
-  const savePlywoodBrandMutation = useMutation({
-    mutationFn: async (brand: string) => {
-      return apiRequest('POST', '/api/plywood-brand-memory', { brand });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/plywood-brand-memory'] });
-    },
-  });
-
-  const deletePlywoodBrandMutation = useMutation({
-    mutationFn: async (brand: string) => {
-      return apiRequest('DELETE', `/api/plywood-brand-memory/${encodeURIComponent(brand)}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/plywood-brand-memory'] });
-    },
-  });
-
-  // Convert database response to simple string array for compatibility
-  const globalPlywoodBrandMemory = plywoodBrandMemoryData.map(item => item.brand);
+  // ✅ Derive variables from Zustand store (for backward compatibility with existing code)
+  const globalLaminateMemory = laminateOptions.map(item => item.code);
+  const plywoodBrandMemoryData = plywoodOptions;
+  const globalPlywoodBrandMemory = plywoodOptions.map(item => item.brand);
 
   // State for laminate section (Top Panel)
   const [laminateSelection, setLaminateSelection] = useState('');
@@ -4130,7 +4132,7 @@ export default function Home() {
                       <Select
                         value={masterPlywoodBrand}
                         onValueChange={(value) => {
-                          setMasterPlywoodBrand(value);
+                          saveMasterSettings({ plywoodBrand: value });
                           updateAllCabinetsPlywood(value);
                         }}
                         data-testid="select-master-plywood"
@@ -4139,7 +4141,7 @@ export default function Home() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {plywoodBrandMemoryData.map((brand: PlywoodBrandMemory) => (
+                          {plywoodOptions.map((brand) => (
                             <SelectItem key={brand.id} value={brand.brand}>
                               {brand.brand}
                             </SelectItem>
@@ -4156,17 +4158,17 @@ export default function Home() {
                             const newBrand = masterCustomPlywoodInput.trim();
 
                             // Check if brand already exists
-                            const exists = plywoodBrandMemoryData.some(
-                              (b: PlywoodBrandMemory) => b.brand.toLowerCase() === newBrand.toLowerCase()
+                            const exists = plywoodOptions.some(
+                              (b) => b.brand.toLowerCase() === newBrand.toLowerCase()
                             );
 
                             if (!exists) {
-                              // Save new brand to memory
-                              savePlywoodBrandMutation.mutate(newBrand);
+                              // Save new brand to store (optimistic update + API)
+                              addPlywood(newBrand);
                             }
 
                             // Update master setting and all cabinets
-                            setMasterPlywoodBrand(newBrand);
+                            saveMasterSettings({ plywoodBrand: newBrand });
                             updateAllCabinetsPlywood(newBrand);
                             setMasterCustomPlywoodInput('');
                           }
@@ -4177,15 +4179,14 @@ export default function Home() {
                       />
                       <div className="mt-2">
                         <Label className="text-sm font-medium">Plywood Godown</Label>
-                        <Input
-                          type="text"
+                        <GodownCombobox
                           value={masterPlywoodGodown}
-                          onChange={(e) => {
-                            setMasterPlywoodGodown(e.target.value);
-                            updateAllCabinetsPlywoodGodown(e.target.value);
+                          onChange={(value) => {
+                            saveMasterSettings({ plywoodGodown: value });
+                            updateAllCabinetsPlywoodGodown(value); // Side-effect preserved
                           }}
-                          placeholder="Enter plywood godown/location"
-                          className="text-xs"
+                          placeholder="Select plywood godown"
+                          type="plywood"
                         />
                       </div>
                     </div>
@@ -4239,13 +4240,13 @@ export default function Home() {
                                   e.preventDefault();
                                   const codeToSave = masterCustomLaminateInput.trim();
 
-                                  // Save to database if new
-                                  if (!globalLaminateMemory.includes(codeToSave)) {
-                                    saveLaminateCodeMutation.mutate(codeToSave);
+                                  // Save to store (optimistic update + API) if new
+                                  if (!laminateOptions.some(opt => opt.code === codeToSave)) {
+                                    addLaminate(codeToSave, codeToSave);
                                   }
 
-                                  // Set as selected code (but don't apply to all panels)
-                                  setMasterLaminateCode(codeToSave);
+                                  // Save to master settings
+                                  saveMasterSettings({ masterLaminateCode: codeToSave });
 
                                   // ✅ CRITICAL FIX: Mark current form panel laminates as user-selected
                                   // This ensures validation passes when adding the cabinet
@@ -4361,15 +4362,14 @@ export default function Home() {
                         </div>
                         <div className="mt-2">
                           <Label className="text-sm font-medium">Laminate Godown</Label>
-                          <Input
-                            type="text"
+                          <GodownCombobox
                             value={masterLaminateGodown}
-                            onChange={(e) => {
-                              setMasterLaminateGodown(e.target.value);
-                              updateAllCabinetsLaminateGodown(e.target.value);
+                            onChange={(value) => {
+                              setMasterLaminateGodown(value);
+                              updateAllCabinetsLaminateGodown(value); // Side-effect preserved
                             }}
-                            placeholder="Enter laminate godown/location"
-                            className="text-xs"
+                            placeholder="Select laminate godown"
+                            type="laminate"
                           />
                         </div>
                       </div>
