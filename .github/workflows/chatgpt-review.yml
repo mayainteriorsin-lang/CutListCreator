@@ -17,35 +17,53 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Run ChatGPT review
+      - name: Get code diff safely
+        id: diff
         run: |
-          # Safe fallback diff — avoids HEAD~1 errors
-          changes=$(git diff HEAD^ HEAD 2>/dev/null || echo "No previous commit")
+          # Safe fallback diff (avoids HEAD~1 error)
+          changes=$(git diff HEAD~1 HEAD 2>/dev/null || echo "")
+          
+          if [ -z "$changes" ]; then
+            echo "No code changes detected"
+          fi
 
-          echo "Changes detected:"
-          echo "$changes"
+          echo "changes<<EOF" >> $GITHUB_OUTPUT
+          echo "$changes" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-          echo "Sending to OpenAI…"
+      - name: Run ChatGPT analysis + auto-fix + inline comments
+        id: review
+        run: |
+          DIFF="${{ steps.diff.outputs.changes }}"
 
-          review=$(curl -s https://api.openai.com/v1/chat/completions \
+          if [ -z "$DIFF" ]; then
+            echo "No diff to review."
+            echo "review_body=No changes to review." >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Sending diff to OpenAI…"
+
+          RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.OPENAI_API_KEY }}" \
             -d "{
               \"model\": \"gpt-4o-mini\",
               \"messages\": [
-                {\"role\": \"system\", \"content\": \"You are a senior full-stack engineer. Review the following code diff for bugs, security issues, performance problems, and improvements.\"},
-                {\"role\": \"user\", \"content\": \"$changes\"}
+                {\"role\": \"system\", \"content\": \"You are a senior full-stack engineer. Review the diff. Look for bugs, security issues, performance issues, and also propose auto-fixes. Provide inline review comments where needed.\"},
+                {\"role\": \"user\", \"content\": \"$DIFF\"}
               ]
             }" | jq -r '.choices[0].message.content')
 
-          echo "Review output:"
-          echo "$review"
+          echo "review_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESPONSE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Comment on PR
+      - name: Comment review on PR (inline supported)
         if: github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v2
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            ## 🔍 ChatGPT Code Review
-            $review
+            ## 🔍 ChatGPT Review  
+            ${{ steps.review.outputs.review_body }}
